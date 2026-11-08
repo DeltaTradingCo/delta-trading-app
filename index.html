@@ -238,7 +238,9 @@ let Cloud=null;
 const isTech=()=>ME&&ME.role==='tech';
 const isMgr=()=>ME&&ME.role==='manager';
 /* fields a technician may change */
-const TECH_EDIT={visits:['status','work','parts','notes'],jobs:['status','progress','notes'],logs:['date','clientId','jobId','work','hours','status','notes']};
+const TECH_EDIT={clients:'*',jobs:'*',logs:'*',visits:['status','work','parts','notes']};
+const TECH_ADD=['clients','jobs','logs'];
+const techOwns=x=>x.techId===ME.techId||x.createdBy===ME.email;
 const TECH_HIDE={jobs:['value']};
 const blank=()=>({settings:{company:'Delta Trading Co.',companyEn:'Delta Trading Co.',email:'deltatradingco.eg@gmail.com',phone:'',address:'',prefix:'CH',startSeq:1,lastBackup:''},
   clients:[],techs:[],contracts:[],visits:[],jobs:[],logs:[]});
@@ -271,7 +273,7 @@ const clName=id=>cl(id)?.name||'—';
 const tName=id=>tech(id)?.name||'<span class="muted">غير محدد</span>';
 const byId=(k,id)=>db[k].find(x=>x.id===id);
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),2200)}
-function clLink(id){const c=cl(id);if(c&&isTech())return`${esc(c.name)} <span class="ref small">${esc(c.ref)}</span>`;return c?`<a href="#/client/${c.id}">${esc(c.name)}</a> <span class="ref small">${esc(c.ref)}</span>`:'—'}
+function clLink(id){const c=cl(id);return c?`<a href="#/client/${c.id}">${esc(c.name)}</a> <span class="ref small">${esc(c.ref)}</span>`:'—'}
 function telLink(p){return p?`<a href="tel:${esc(p)}" style="direction:ltr;unicode-bidi:embed">${esc(p)}</a>`:'—'}
 function waNum(p){let n=String(p||'').replace(/\D/g,'');if(n.startsWith('00'))n=n.slice(2);if(n.startsWith('0'))n='20'+n.slice(1);return n}
 
@@ -395,7 +397,8 @@ function optsHtml(f,val,clientId){
 let formCtx=null;
 function openForm(key,id,defaults={}){
   const E=ENT[key];const cur=id?byId(key,id):null;
-  if(key!=='clients'&&key!=='techs'&&['contracts','visits','jobs'].includes(key)&&!db.clients.length){toast('أضف عميلاً أولاً');return openForm('clients')}
+  if(isTech()&&(id?!TECH_EDIT[key]:!TECH_ADD.includes(key)))return toast('ليس لديك صلاحية');
+  if(['contracts','visits','jobs'].includes(key)&&!db.clients.length){toast('أضف عميلاً أولاً');return openForm('clients')}
   const obj={...(cur||E.defaults()),...defaults};
   formCtx={key,id};
   $('#mTitle').textContent=(id?'تعديل ':'إضافة ')+E.one;
@@ -422,7 +425,7 @@ function openForm(key,id,defaults={}){
   setTimeout(()=>{const first=$('#mForm input,#mForm select');first&&first.focus()},50);
 }
 function closeModal(){$('#modal').classList.add('hidden');formCtx=null}
-function fieldRO(key,k){if(!isTech())return false;if(key==='logs'&&k==='techId')return true;return !(TECH_EDIT[key]||[]).includes(k)}
+function fieldRO(key,k){if(!isTech())return false;if(key==='logs'&&k==='techId')return true;const t=TECH_EDIT[key];return t==='*'?false:!(t||[]).includes(k)}
 function submitForm(){
   const{key,id}=formCtx;const E=ENT[key];const data={};
   for(const f of E.fields){const el=$('#f_'+f.k);if(!el||fieldRO(key,f.k)||f.t==='file')continue;
@@ -494,7 +497,7 @@ function table(rows,cols,emptyMsg='لا توجد بيانات بعد'){
   return`<div class="table-wrap"><table><thead><tr>${cols.map(c=>`<th>${c.h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td class="${c.cls||''}" data-label="${esc(c.h)}">${c.v(r)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 const act=(key,id,extra='')=>isTech()
-  ?`<div class="btns no-print">${extra}${TECH_EDIT[key]?`<button class="btn sm" onclick="openForm('${key}','${id}')">تحديث</button>`:''}</div>`
+  ?`<div class="btns no-print">${extra}${TECH_EDIT[key]?`<button class="btn sm" onclick="openForm('${key}','${id}')">${key==='clients'?'تعديل':'تحديث'}</button>`:''}</div>`
   :`<div class="btns no-print">${extra}<button class="btn sm" onclick="openForm('${key}','${id}')">تعديل</button><button class="btn sm danger" onclick="del('${key}','${id}')">حذف</button></div>`;
 const COLS={
  visits:(withClient=true)=>[
@@ -533,7 +536,7 @@ const COLS={
 const ui={};
 const NAV=[['dashboard','🏠','الرئيسية'],['daily','📋','المتابعة اليومية'],['clients','👥','العملاء'],['contracts','📄','العقود'],
  ['visits','🔧','زيارات الصيانة'],['jobs','🏗️','الأعمال الجارية والجديدة'],['logs','📝','سجل الأعمال اليومية'],['techs','👷','الفنيين'],['settings','⚙️','الإعدادات والنسخ']];
-const NAV_TECH=[['daily','📋','مهامي اليومية'],['visits','🔧','زياراتي'],['jobs','🏗️','أعمالي'],['logs','📝','سجل أعمالي']];
+const NAV_TECH=[['daily','📋','مهامي اليومية'],['clients','👥','العملاء'],['jobs','🏗️','الأعمال'],['visits','🔧','زياراتي'],['logs','📝','سجل أعمالي']];
 function renderNav(page){
   const mine=x=>!isTech()||x.techId===ME.techId;
   const late=db.visits.filter(v=>visitStatus(v)==='متأخرة'&&mine(v)).length;
@@ -588,8 +591,8 @@ function renewContract(id){
 }
 
 function listView({key,title,add,cols,filters=[],rows,search,head=''}){
-  if(isTech()){const base=rows;rows=()=>base().filter(x=>x.techId===ME.techId);filters=filters.filter(f=>f.k!=='tech')}
-  const canAdd=!isTech()||key==='logs';
+  if(isTech()&&['visits','jobs','logs'].includes(key)){const base=rows;rows=()=>base().filter(x=>key==='jobs'?techOwns(x):x.techId===ME.techId);filters=filters.filter(f=>f.k!=='tech')}
+  const canAdd=!isTech()||TECH_ADD.includes(key);
   $('#main').innerHTML=`<div class="page-head"><h1>${title}</h1><div class="btns">${head}${canAdd?`<button class="btn primary" onclick="openForm('${key}')">+ ${add}</button>`:''}<button class="btn" onclick="window.print()">🖨️ طباعة</button></div></div>
   ${printHead(title)}
   <div class="toolbar"><input type="search" id="q" placeholder="🔍 بحث..." value="${esc(ui[key+'_q']||'')}">
@@ -615,7 +618,7 @@ function viewClients(){
    cols:[{h:'الرقم المرجعي',v:c=>`<a href="#/client/${c.id}" class="ref">${esc(c.ref)}</a>`},
     {h:'العميل',v:c=>`<a href="#/client/${c.id}"><b>${esc(c.name)}</b></a><br><span class="small muted">${esc(c.type||'')}</span>`},
     {h:'المسؤول',v:c=>esc(c.contact||'—')},{h:'الموبايل',cls:'nowrap',v:c=>telLink(c.phone)},{h:'المنطقة',v:c=>esc(c.area||'—')},
-    {h:'عقود سارية',v:c=>db.contracts.filter(x=>x.clientId===c.id&&contractStatus(x)==='ساري').length},
+    ...(isTech()?[]:[{h:'عقود سارية',v:c=>db.contracts.filter(x=>x.clientId===c.id&&contractStatus(x)==='ساري').length}]),
     {h:'أعمال مفتوحة',v:c=>db.jobs.filter(x=>x.clientId===c.id&&['جديد','جاري التنفيذ','معلق'].includes(x.status)).length},
     {h:'الحالة',v:c=>badge(c.status)},{h:'',v:c=>`<div class="btns no-print"><a class="btn sm" href="#/client/${c.id}">ملف العميل</a><button class="btn sm" onclick="openForm('clients','${c.id}')">تعديل</button></div>`}]});
 }
@@ -625,13 +628,13 @@ function viewClient(id){
   const contracts=db.contracts.filter(k),visits=db.visits.filter(k).sort((a,b)=>b.date.localeCompare(a.date)),jobs=db.jobs.filter(k).sort((a,b)=>(b.n||0)-(a.n||0)),logs=db.logs.filter(k).sort((a,b)=>b.date.localeCompare(a.date));
   $('#main').innerHTML=`${printHead('ملف عميل '+c.ref)}
   <div class="page-head"><div><div class="sub"><a href="#/clients">العملاء</a> ›</div><h1>${esc(c.name)} <span class="ref" style="font-size:18px">${esc(c.ref)}</span></h1></div>
-   <div class="btns"><button class="btn primary" onclick="openForm('jobs',null,{clientId:'${id}'})">+ عمل جديد</button><button class="btn" onclick="openForm('contracts',null,{clientId:'${id}'})">+ عقد / رفع عقد</button><button class="btn" onclick="openForm('visits',null,{clientId:'${id}'})">+ زيارة</button><button class="btn" onclick="openForm('clients','${id}')">تعديل</button><button class="btn" onclick="window.print()">🖨️</button><button class="btn danger" onclick="del('clients','${id}')">حذف</button></div></div>
+   <div class="btns"><button class="btn primary" onclick="openForm('jobs',null,{clientId:'${id}'})">+ عمل جديد</button>${isTech()?`<button class="btn" onclick="openForm('logs',null,{clientId:'${id}'})">+ تسجيل عمل منفذ</button>`:`<button class="btn" onclick="openForm('contracts',null,{clientId:'${id}'})">+ عقد / رفع عقد</button><button class="btn" onclick="openForm('visits',null,{clientId:'${id}'})">+ زيارة</button>`}<button class="btn" onclick="openForm('clients','${id}')">تعديل</button><button class="btn" onclick="window.print()">🖨️</button>${isTech()?'':`<button class="btn danger" onclick="del('clients','${id}')">حذف</button>`}</div></div>
   <div class="card"><div class="info-grid">
    <div><b>النوع</b>${esc(c.type||'—')}</div><div><b>الحالة</b>${badge(c.status)}</div><div><b>المسؤول</b>${esc(c.contact||'—')} ${c.contactTitle?`<span class="muted small">(${esc(c.contactTitle)})</span>`:''}</div>
    <div><b>الموبايل</b>${telLink(c.phone)} ${c.phone?`<a class="no-print small" target="_blank" href="https://wa.me/${waNum(c.phone)}">واتساب</a>`:''}</div><div><b>تليفون آخر</b>${telLink(c.phone2)}</div><div><b>البريد</b>${c.email?`<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`:'—'}</div>
    <div><b>المنطقة</b>${esc(c.area||'—')}</div><div><b>العنوان</b>${esc(c.address||'—')} ${c.location?`<a class="no-print small" target="_blank" href="${esc(c.location)}">الموقع على الخريطة</a>`:''}</div><div><b>تاريخ الإضافة</b>${fmt((c.createdAt||'').slice(0,10))}</div>
    ${c.notes?`<div style="grid-column:1/-1"><b>ملاحظات</b>${esc(c.notes)}</div>`:''}</div></div>
-  <div class="card"><h2>📄 العقود (${contracts.length})</h2>${table(contracts,COLS.contracts(false),'لا توجد عقود لهذا العميل')}</div>
+  ${isTech()?'':`<div class="card"><h2>📄 العقود (${contracts.length})</h2>${table(contracts,COLS.contracts(false),'لا توجد عقود لهذا العميل')}</div>`}
   <div class="card"><h2>🏗️ الأعمال (${jobs.length})</h2>${table(jobs,COLS.jobs(false),'لا توجد أعمال لهذا العميل')}</div>
   <div class="card"><h2>🔧 زيارات الصيانة (${visits.length})</h2>${table(visits,COLS.visits(false),'لا توجد زيارات')}</div>
   <div class="card"><h2>📝 سجل الأعمال اليومية (${logs.length})</h2>${table(logs,COLS.logs(false),'لا يوجد سجل')}</div>`;
@@ -689,15 +692,15 @@ function viewDaily(){
   const mine=x=>!ui.daily_tech||x.techId===ui.daily_tech;
   const visits=db.visits.filter(v=>v.date===d&&v.status!=='ملغاة'&&mine(v));
   const logs=db.logs.filter(l=>l.date===d&&mine(l));
-  const openJobs=db.jobs.filter(j=>['جديد','جاري التنفيذ'].includes(j.status)&&(!j.start||j.start<=d)&&mine(j));
+  const openJobs=db.jobs.filter(j=>['جديد','جاري التنفيذ'].includes(j.status)&&(!j.start||j.start<=d)&&(isTech()?techOwns(j):mine(j)));
   const techs=db.techs.filter(t=>t.status!=='غير نشط'||visits.some(v=>v.techId===t.id)||logs.some(l=>l.techId===t.id));
   const groups=[...techs.map(t=>({t,id:t.id})),{t:null,id:''}];
   const cards=groups.map(({t,id})=>{
-    const vs=visits.filter(v=>(v.techId||'')===id),js=openJobs.filter(j=>(j.techId||'')===id),ls=logs.filter(l=>(l.techId||'')===id);
+    const vs=visits.filter(v=>(v.techId||'')===id),js=openJobs.filter(j=>(j.techId||'')===id||(isTech()&&t&&j.createdBy===ME.email&&j.techId!==id)),ls=logs.filter(l=>(l.techId||'')===id);
     if(!t&&!vs.length&&!js.length&&!ls.length)return'';
     if(ui.daily_tech&&id!==ui.daily_tech)return'';
     return`<div class="card tech-card"><div class="page-head" style="margin-bottom:6px"><div><h3>${t?'👷 '+esc(t.name):'⚠️ غير مُسند لفني'}</h3>${t?`<span class="small muted">${esc(t.specialty||'')} ${t.phone?'· '+esc(t.phone):''}</span>`:''}</div>
-     <div class="btns no-print">${t?`<button class="btn sm primary" onclick="openForm('logs',null,{date:'${d}',techId:'${id}'})">+ تسجيل عمل</button>${isTech()?'':`<button class="btn sm wa" onclick="sendWA('${id}')">واتساب المهام</button>`}`:''}</div></div>
+     <div class="btns no-print">${t?`<button class="btn sm primary" onclick="openForm('logs',null,{date:'${d}',techId:'${id}'})">+ تسجيل عمل</button>${isTech()?`<button class="btn sm" onclick="openForm('jobs',null,{techId:'${id}'})">+ عمل جديد</button><button class="btn sm" onclick="openForm('clients')">+ عميل</button>`:''}${isTech()?'':`<button class="btn sm wa" onclick="sendWA('${id}')">واتساب المهام</button>`}`:''}</div></div>
      <div class="sec-t">🔧 زيارات الصيانة (${vs.length})</div>${vs.length?vs.map(v=>`<div class="list-item"><div><div class="t">${clLink(v.clientId)}</div><div class="small muted">${esc(v.type)}${v.time?' · '+esc(v.time):''} · ${esc(cl(v.clientId)?.address||cl(v.clientId)?.area||'')}</div></div><div class="btns">${badge(visitStatus(v))}${v.status!=='تمت'?`<button class="btn sm primary no-print" onclick="quickDone('${v.id}')">✓ تمت</button>`:''}<button class="btn sm no-print" onclick="openForm('visits','${v.id}')">فتح</button></div></div>`).join(''):'<div class="small muted">لا توجد زيارات</div>'}
      <div class="sec-t">🏗️ أعمال مفتوحة (${js.length})</div>${js.length?js.map(j=>`<div class="list-item"><div><div class="t">${esc(j.title)}</div><div class="small muted">${esc(clName(j.clientId))} · <span class="ref">${esc(j.no)}</span>${j.due?' · تسليم '+fmt(j.due):''}</div></div><div class="btns"><span class="prog"><i style="width:${Number(j.progress)||0}%"></i></span>${badge(j.status)}<button class="btn sm no-print" onclick="openForm('jobs','${j.id}')">تحديث</button></div></div>`).join(''):'<div class="small muted">لا توجد أعمال مفتوحة</div>'}
      <div class="sec-t">📝 ما تم تنفيذه (${ls.length})</div>${ls.length?ls.map(l=>`<div class="list-item"><div><div>${esc(l.work)}</div><div class="small muted">${esc(clName(l.clientId))}${l.hours?' · '+esc(l.hours)+' ساعة':''}${l.notes?' · '+esc(l.notes):''}</div></div><div class="btns">${badge(l.status)}<button class="btn sm no-print" onclick="openForm('logs','${l.id}')">تعديل</button></div></div>`).join(''):'<div class="small muted">لم يُسجَّل شيء بعد</div>'}
@@ -832,7 +835,7 @@ function wipe(){if(!confirm('سيتم مسح كل البيانات نهائيا�
 function render(){
   if(!ME)return;
   let [page,arg]=(location.hash.replace(/^#\/?/,'')||(isTech()?'daily':'dashboard')).split('/');
-  if(isTech()&&!NAV_TECH.some(n=>n[0]===page))page='daily';
+  if(isTech()&&page!=='client'&&!NAV_TECH.some(n=>n[0]===page))page='daily';
   renderNav(page);
   ({dashboard:viewDashboard,daily:viewDaily,clients:viewClients,client:()=>viewClient(arg),contracts:viewContracts,visits:viewVisits,jobs:viewJobs,logs:viewLogs,techs:viewTechs,settings:viewSettings}[page]||viewDashboard)();
 }
