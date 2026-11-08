@@ -25,9 +25,12 @@ service cloud.firestore {
       allow write: if isManager();
     }
 
+    // العملاء: الفني يضيف ويعدّل (بدون تغيير الكود)، والحذف للمدير فقط
     match /clients/{id} {
       allow read: if isManager() || isTech();
-      allow write: if isManager();
+      allow create: if isManager() || (isTech() && request.resource.data.createdBy == email());
+      allow update: if isManager() || (isTech() && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ref', 'seq', 'createdBy']));
+      allow delete: if isManager();
     }
 
     match /techs/{id} {
@@ -40,9 +43,11 @@ service cloud.firestore {
       allow read, write: if isManager();
     }
 
-    // ملفات العقود المرفوعة (PDF / صور): المدير فقط
+    // الملفات المرفوعة: العقود للمدير فقط — صور أوامر الشغل يرفعها ويشوفها الفني أيضاً
     match /files/{id} {
-      allow read, write: if isManager();
+      allow read: if isManager() || (isTech() && resource.data.kind == 'job');
+      allow create: if isManager() || (isTech() && request.resource.data.kind == 'job');
+      allow update, delete: if isManager();
     }
 
     // الفني يحدّث حالة وتقرير زياراته فقط
@@ -53,12 +58,14 @@ service cloud.firestore {
                     && onlyChanged(['status', 'work', 'parts', 'notes', 'updatedAt', 'updatedBy']));
     }
 
-    // الفني يحدّث حالة ونسبة إنجاز أعماله فقط
+    // الأعمال: الفني يضيف أعمالاً جديدة ويتابع أعماله (بدون القيمة المالية)، والحذف للمدير فقط
     match /jobs/{id} {
       allow read: if isManager() || isTech();
-      allow create, delete: if isManager();
-      allow update: if isManager() || (isTech() && resource.data.techId == myTech()
-                    && onlyChanged(['status', 'progress', 'notes', 'updatedAt', 'updatedBy']));
+      allow create: if isManager() || (isTech() && request.resource.data.createdBy == email()
+                    && !request.resource.data.keys().hasAny(['value']));
+      allow update: if isManager() || (isTech() && (resource.data.techId == myTech() || resource.data.createdBy == email())
+                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['value', 'createdBy']));
+      allow delete: if isManager();
     }
 
     // سجل الأعمال اليومية: الفني يسجل ويعدّل سجلاته فقط
