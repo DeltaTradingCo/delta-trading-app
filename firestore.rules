@@ -40,6 +40,11 @@ service cloud.firestore {
       allow read, write: if isManager();
     }
 
+    // ملفات العقود المرفوعة (PDF / صور): المدير فقط
+    match /files/{id} {
+      allow read, write: if isManager();
+    }
+
     // الفني يحدّث حالة وتقرير زياراته فقط
     match /visits/{id} {
       allow read: if isManager() || isTech();
