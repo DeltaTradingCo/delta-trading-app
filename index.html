@@ -122,6 +122,7 @@ th{background:#f7f8fb;color:var(--muted);font-size:13px;font-weight:700;white-sp
 tr:last-child td{border-bottom:0}
 tbody tr:hover{background:#fafbfd}
 td.nowrap{white-space:nowrap}
+th.sortable{cursor:pointer;user-select:none}th.sortable:hover{color:var(--navy);background:#eef1f6}th .arr{color:#b3bacb;font-size:11px}th.sortable:hover .arr{color:var(--green)}
 .ref{font-family:Consolas,monospace;direction:ltr;unicode-bidi:embed;font-weight:700;color:var(--navy);white-space:nowrap}
 .muted{color:var(--muted)}
 .small{font-size:13px}
@@ -502,17 +503,27 @@ function genVisits(contractId,silent){
 function quickDone(id){openForm('visits',id,{status:'تمت'})}
 
 /* ===================== Tables ===================== */
-function table(rows,cols,emptyMsg='لا توجد بيانات بعد'){
+const collator=new Intl.Collator('ar',{numeric:true,sensitivity:'base'});
+const plain=h=>String(h??'').replace(/<[^>]*>/g,' ').replace(/&amp;/g,'&').replace(/&[a-z#0-9]+;/g,' ').replace(/\s+/g,' ').trim();
+function sortRows(rows,cols,tid){
+  const st=tid&&ui.sort[tid];if(!st||!cols[st.i]||!cols[st.i].h)return rows;const c=cols[st.i],key=c.s||(r=>plain(c.v(r)));
+  return rows.map(r=>[key(r),r]).sort((a,b)=>{const x=a[0],y=b[0];const ex=x===''||x==null,ey=y===''||y==null;if(ex||ey)return ex-ey;
+    return st.d*((typeof x==='number'&&typeof y==='number')?x-y:collator.compare(String(x),String(y)))}).map(p=>p[1]);
+}
+function sortBy(tid,i,dir){const st=ui.sort[tid];ui.sort[tid]=i===''?null:{i:+i,d:dir||(st&&st.i===+i?-st.d:1)};if(!ui.sort[tid])delete ui.sort[tid];
+  try{localStorage.setItem('delta_sort',JSON.stringify(ui.sort))}catch(e){}ui.refresh&&ui.refresh.tid===tid?ui.refresh():render()}
+function table(rows,cols,emptyMsg='لا توجد بيانات بعد',tid=''){
   if(!rows.length)return`<div class="table-wrap"><div class="empty">${emptyMsg}</div></div>`;
-  return`<div class="table-wrap"><table><thead><tr>${cols.map(c=>`<th>${c.h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td class="${c.cls||''}" data-label="${esc(c.h)}">${c.v(r)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  rows=sortRows(rows,cols,tid);const st=tid&&ui.sort[tid];
+  return`<div class="table-wrap"><table><thead><tr>${cols.map((c,i)=>c.h&&tid?`<th class="sortable" onclick="sortBy('${tid}',${i})" title="ترتيب حسب ${esc(c.h)}">${c.h} <span class="arr">${st&&st.i===i?(st.d>0?'▲':'▼'):'⇅'}</span></th>`:`<th>${c.h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td class="${c.cls||''}" data-label="${esc(c.h)}">${c.v(r)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 const act=(key,id,extra='')=>isTech()
   ?`<div class="btns no-print">${extra}${TECH_EDIT[key]?`<button class="btn sm" onclick="openForm('${key}','${id}')">${key==='clients'?'تعديل':'تحديث'}</button>`:''}</div>`
   :`<div class="btns no-print">${extra}<button class="btn sm" onclick="openForm('${key}','${id}')">تعديل</button><button class="btn sm danger" onclick="del('${key}','${id}')">حذف</button></div>`;
 const COLS={
  visits:(withClient=true)=>[
-  {h:'رقم الزيارة',v:r=>`<span class="ref">${esc(r.no)}</span>`},
-  {h:'التاريخ',cls:'nowrap',v:r=>`${fmt(r.date)} <span class="muted small">${dayName(r.date)}</span>${r.time?` <span class="small">${esc(r.time)}</span>`:''}`},
+  {h:'رقم الزيارة',s:r=>r.no,v:r=>`<span class="ref">${esc(r.no)}</span>`},
+  {h:'التاريخ',cls:'nowrap',s:r=>(r.date||'')+(r.time||''),v:r=>`${fmt(r.date)} <span class="muted small">${dayName(r.date)}</span>${r.time?` <span class="small">${esc(r.time)}</span>`:''}`},
   ...(withClient?[{h:'العميل',v:r=>clLink(r.clientId)}]:[]),
   {h:'النوع',v:r=>esc(r.type)},{h:'الفني',v:r=>tName(r.techId)},
   {h:'الحالة',v:r=>badge(visitStatus(r))},
@@ -521,30 +532,31 @@ const COLS={
   {h:'رقم العقد',v:r=>`<span class="ref">${esc(r.no)}</span>`},
   ...(withClient?[{h:'العميل',v:r=>clLink(r.clientId)}]:[]),
   {h:'الموضوع',v:r=>`${esc(r.title)}<br><span class="small muted">${esc(r.kind||'')}</span>`},
-  {h:'المدة',cls:'nowrap',v:r=>`${fmt(r.start)} ← ${fmt(r.end)}`},
-  {h:'الزيارات',v:r=>{const vs=db.visits.filter(v=>v.contractId===r.id);return`${freqName(r.frequency)}<br><span class="small muted">تمت ${vs.filter(v=>v.status==='تمت').length} من ${vs.length}</span>`}},
-  {h:'القيمة',cls:'nowrap',v:r=>money(r.value)},
+  {h:'المدة',cls:'nowrap',s:r=>r.end||'',v:r=>`${fmt(r.start)} ← ${fmt(r.end)}`},
+  {h:'الزيارات',s:r=>Number(r.frequency)||0,v:r=>{const vs=db.visits.filter(v=>v.contractId===r.id);return`${freqName(r.frequency)}<br><span class="small muted">تمت ${vs.filter(v=>v.status==='تمت').length} من ${vs.length}</span>`}},
+  {h:'القيمة',cls:'nowrap',s:r=>r.value===''||r.value==null?'':Number(r.value),v:r=>money(r.value)},
   {h:'الحالة',v:r=>badge(contractStatus(r))},
   {h:'',v:r=>act('contracts',r.id,`${r.attachment?`<button class="btn sm navy" onclick="openFile('${r.attachment.id}')" title="${esc(r.attachment.name)}">📎 العقد</button>`:`<button class="btn sm" onclick="openForm('contracts','${r.id}')" title="رفع ملف العقد">⬆️ رفع العقد</button>`}<button class="btn sm" onclick="genVisits('${r.id}')" title="إنشاء جدول الزيارات">📅 جدولة</button>`)}],
  jobs:(withClient=true)=>[
   {h:'رقم العمل',v:r=>`<span class="ref">${esc(r.no)}</span>`},
   ...(withClient?[{h:'العميل',v:r=>clLink(r.clientId)}]:[]),
   {h:'العمل',v:r=>`<b>${esc(r.title)}</b><br><span class="small muted">${esc(r.kind||'')}${r.orderNo?' · أمر شغل رقم '+esc(r.orderNo):''}</span>`},
-  {h:'أمر الشغل',v:r=>(r.attachments||[]).length?`<div class="btns">${r.attachments.map((a,i)=>`<button class="btn sm navy" onclick="openFile('${a.id}')" title="${esc(a.name)}">📎 ${r.attachments.length>1?'صفحة '+(i+1):'أمر الشغل'}</button>`).join('')}</div>`:`<button class="btn sm no-print" onclick="openForm('jobs','${r.id}')">📷 رفع أمر الشغل</button>`},
+  {h:'أمر الشغل',s:r=>(r.attachments||[]).length,v:r=>(r.attachments||[]).length?`<div class="btns">${r.attachments.map((a,i)=>`<button class="btn sm navy" onclick="openFile('${a.id}')" title="${esc(a.name)}">📎 ${r.attachments.length>1?'صفحة '+(i+1):'أمر الشغل'}</button>`).join('')}</div>`:`<button class="btn sm no-print" onclick="openForm('jobs','${r.id}')">📷 رفع أمر الشغل</button>`},
   {h:'الفني',v:r=>tName(r.techId)},
-  {h:'التسليم',cls:'nowrap',v:r=>r.due?`${fmt(r.due)}${r.due<today()&&!['مكتمل','ملغي'].includes(r.status)?' <span class="badge b-red">متأخر</span>':''}`:'—'},
-  {h:'الإنجاز',cls:'nowrap',v:r=>`<span class="prog"><i style="width:${Number(r.progress)||0}%"></i></span> <span class="small">${Number(r.progress)||0}%</span>`},
+  {h:'التسليم',cls:'nowrap',s:r=>r.due||'',v:r=>r.due?`${fmt(r.due)}${r.due<today()&&!['مكتمل','ملغي'].includes(r.status)?' <span class="badge b-red">متأخر</span>':''}`:'—'},
+  {h:'الإنجاز',cls:'nowrap',s:r=>Number(r.progress)||0,v:r=>`<span class="prog"><i style="width:${Number(r.progress)||0}%"></i></span> <span class="small">${Number(r.progress)||0}%</span>`},
   {h:'الحالة',v:r=>`${badge(r.status)} ${r.priority&&r.priority!=='عادية'?badge(r.priority):''}`},
   {h:'',v:r=>act('jobs',r.id)}],
  logs:(withClient=true)=>[
-  {h:'التاريخ',cls:'nowrap',v:r=>fmt(r.date)},{h:'الفني',v:r=>tName(r.techId)},
+  {h:'التاريخ',cls:'nowrap',s:r=>r.date||'',v:r=>fmt(r.date)},{h:'الفني',v:r=>tName(r.techId)},
   ...(withClient?[{h:'العميل',v:r=>r.clientId?clLink(r.clientId):'—'}]:[]),
   {h:'العمل المنفذ',v:r=>`${esc(r.work)}${r.jobId&&byId('jobs',r.jobId)?`<br><span class="ref small">${esc(byId('jobs',r.jobId).no)}</span>`:''}`},
   {h:'ساعات',v:r=>esc(r.hours||'—')},{h:'الحالة',v:r=>badge(r.status)},{h:'',v:r=>act('logs',r.id)}]
 };
 
 /* ===================== Views ===================== */
-const ui={};
+const ui={sort:{}};
+try{ui.sort=JSON.parse(localStorage.getItem('delta_sort')||'{}')||{}}catch(e){ui.sort={}}
 const NAV=[['dashboard','🏠','الرئيسية'],['daily','📋','المتابعة اليومية'],['clients','👥','العملاء'],['contracts','📄','العقود'],
  ['visits','🔧','زيارات الصيانة'],['jobs','🏗️','الأعمال الجارية والجديدة'],['logs','📝','سجل الأعمال اليومية'],['techs','👷','الفنيين'],['settings','⚙️','الإعدادات والنسخ']];
 const NAV_TECH=[['daily','📋','مهامي اليومية'],['clients','👥','العملاء'],['jobs','🏗️','الأعمال'],['visits','🔧','زياراتي'],['logs','📝','سجل أعمالي']];
@@ -608,14 +620,20 @@ function listView({key,title,add,cols,filters=[],rows,search,head=''}){
   ${printHead(title)}
   <div class="toolbar"><input type="search" id="q" placeholder="🔍 بحث..." value="${esc(ui[key+'_q']||'')}">
   ${filters.map(f=>`<select id="flt_${f.k}"><option value="">${f.l}: الكل</option>${f.opts.map(o=>{const[v,l]=Array.isArray(o)?o:[o,o];return`<option value="${esc(v)}" ${ui[key+'_'+f.k]===v?'selected':''}>${esc(l)}</option>`}).join('')}</select>`).join('')}
+  <select id="sortSel">${(()=>{const st=ui.sort[key];return`<option value="">↕️ ترتيب: افتراضي</option>`+cols.map((c,i)=>c.h?`<option value="${i}" ${st&&st.i===i?'selected':''}>↕️ ترتيب: ${esc(c.h)}</option>`:'').join('')})()}</select>
+  <button class="btn sm" id="sortDir" title="عكس الترتيب">${ui.sort[key]&&ui.sort[key].d<0?'⬇️ تنازلي':'⬆️ تصاعدي'}</button>
   <span class="muted small" id="cnt" style="align-self:center"></span></div><div id="tbl"></div>`;
   const upd=()=>{
     const q=($('#q').value||'').trim().toLowerCase();ui[key+'_q']=$('#q').value;
     let r=rows();
     filters.forEach(f=>{const v=$('#flt_'+f.k).value;ui[key+'_'+f.k]=v;if(v)r=r.filter(x=>f.test(x,v))});
     if(q)r=r.filter(x=>search(x).toLowerCase().includes(q));
-    $('#cnt').textContent=r.length+' سجل';$('#tbl').innerHTML=table(r,cols);
+    $('#cnt').textContent=r.length+' سجل';$('#tbl').innerHTML=table(r,cols,undefined,key);
+    const st=ui.sort[key];$('#sortSel').value=st?String(st.i):'';$('#sortDir').textContent=st&&st.d<0?'⬇️ تنازلي':'⬆️ تصاعدي';$('#sortDir').disabled=!st;
   };
+  upd.tid=key;ui.refresh=upd;
+  $('#sortSel').onchange=e=>sortBy(key,e.target.value,ui.sort[key]?.d||1);
+  $('#sortDir').onclick=()=>{const st=ui.sort[key];if(st)sortBy(key,st.i,-st.d)};
   $('#q').oninput=upd;filters.forEach(f=>$('#flt_'+f.k).onchange=upd);upd();
 }
 const monthOpts=()=>{const s=new Set([...db.visits.map(v=>v.date?.slice(0,7)),today().slice(0,7)]);return[...s].filter(Boolean).sort().reverse().map(m=>[m,m.split('-').reverse().join('/')])};
@@ -626,7 +644,7 @@ function viewClients(){
    rows:()=>[...db.clients].sort((a,b)=>(b.seq||0)-(a.seq||0)),
    search:c=>[c.ref,c.name,c.contact,c.phone,c.phone2,c.area,c.address,c.email].join(' '),
    filters:[{k:'status',l:'الحالة',opts:['نشط','محتمل','متوقف'],test:(c,v)=>c.status===v},{k:'type',l:'النوع',opts:CLIENT_TYPES,test:(c,v)=>c.type===v}],
-   cols:[{h:'الرقم المرجعي',v:c=>`<a href="#/client/${c.id}" class="ref">${esc(c.ref)}</a>`},
+   cols:[{h:'الرقم المرجعي',s:c=>c.seq||0,v:c=>`<a href="#/client/${c.id}" class="ref">${esc(c.ref)}</a>`},
     {h:'العميل',v:c=>`<a href="#/client/${c.id}"><b>${esc(c.name)}</b></a><br><span class="small muted">${esc(c.type||'')}</span>`},
     {h:'المسؤول',v:c=>esc(c.contact||'—')},{h:'الموبايل',cls:'nowrap',v:c=>telLink(c.phone)},{h:'المنطقة',v:c=>esc(c.area||'—')},
     ...(isTech()?[]:[{h:'عقود سارية',v:c=>db.contracts.filter(x=>x.clientId===c.id&&contractStatus(x)==='ساري').length}]),
@@ -645,10 +663,10 @@ function viewClient(id){
    <div><b>الموبايل</b>${telLink(c.phone)} ${c.phone?`<a class="no-print small" target="_blank" href="https://wa.me/${waNum(c.phone)}">واتساب</a>`:''}</div><div><b>تليفون آخر</b>${telLink(c.phone2)}</div><div><b>البريد</b>${c.email?`<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`:'—'}</div>
    <div><b>المنطقة</b>${esc(c.area||'—')}</div><div><b>العنوان</b>${esc(c.address||'—')} ${c.location?`<a class="no-print small" target="_blank" href="${esc(c.location)}">الموقع على الخريطة</a>`:''}</div><div><b>تاريخ الإضافة</b>${fmt((c.createdAt||'').slice(0,10))}</div>
    ${c.notes?`<div style="grid-column:1/-1"><b>ملاحظات</b>${esc(c.notes)}</div>`:''}</div></div>
-  ${isTech()?'':`<div class="card"><h2>📄 العقود (${contracts.length})</h2>${table(contracts,COLS.contracts(false),'لا توجد عقود لهذا العميل')}</div>`}
-  <div class="card"><h2>🏗️ الأعمال (${jobs.length})</h2>${table(jobs,COLS.jobs(false),'لا توجد أعمال لهذا العميل')}</div>
-  <div class="card"><h2>🔧 زيارات الصيانة (${visits.length})</h2>${table(visits,COLS.visits(false),'لا توجد زيارات')}</div>
-  <div class="card"><h2>📝 سجل الأعمال اليومية (${logs.length})</h2>${table(logs,COLS.logs(false),'لا يوجد سجل')}</div>`;
+  ${isTech()?'':`<div class="card"><h2>📄 العقود (${contracts.length})</h2>${table(contracts,COLS.contracts(false),'لا توجد عقود لهذا العميل','c_contracts')}</div>`}
+  <div class="card"><h2>🏗️ الأعمال (${jobs.length})</h2>${table(jobs,COLS.jobs(false),'لا توجد أعمال لهذا العميل','c_jobs')}</div>
+  <div class="card"><h2>🔧 زيارات الصيانة (${visits.length})</h2>${table(visits,COLS.visits(false),'لا توجد زيارات','c_visits')}</div>
+  <div class="card"><h2>📝 سجل الأعمال اليومية (${logs.length})</h2>${table(logs,COLS.logs(false),'لا يوجد سجل','c_logs')}</div>`;
 }
 function viewContracts(){
   listView({key:'contracts',title:'العقود',add:'عقد جديد',
@@ -845,6 +863,7 @@ function wipe(){if(!confirm('سيتم مسح كل البيانات نهائيا�
 
 /* ===================== Router ===================== */
 function render(){
+  ui.refresh=null;
   if(!ME)return;
   let [page,arg]=(location.hash.replace(/^#\/?/,'')||(isTech()?'daily':'dashboard')).split('/');
   if(isTech()&&page!=='client'&&!NAV_TECH.some(n=>n[0]===page))page='daily';
