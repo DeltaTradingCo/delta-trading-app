@@ -1,5 +1,5 @@
 rules_version = '2';
-// قواعد الحماية لبرنامج متابعة دلتا تريدنج
+// قواعد الحماية لبرنامج متابعة Delta Trading Co.
 // المدير الرئيسي: deltatradingco.eg@gmail.com — الفنيون يُضافون من داخل البرنامج
 service cloud.firestore {
   match /databases/{database}/documents {

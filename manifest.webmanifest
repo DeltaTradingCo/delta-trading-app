@@ -1,0 +1,18 @@
+{
+  "name": "Delta Trading Co. — متابعة الأعمال والصيانة",
+  "short_name": "Delta Trading",
+  "description": "متابعة العملاء وعقود الصيانة والزيارات والأعمال اليومية مع الفنيين",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#161A3C",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
