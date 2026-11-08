@@ -1,0 +1,67 @@
+rules_version = '2';
+// قواعد الحماية لبرنامج متابعة دلتا تريدنج
+// المدير الرئيسي: deltatradingco.eg@gmail.com — الفنيون يُضافون من داخل البرنامج
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null && request.auth.token.email_verified == true; }
+    function email() { return request.auth.token.email.lower(); }
+    function hasUser() { return exists(/databases/$(database)/documents/users/$(email())); }
+    function userDoc() { return get(/databases/$(database)/documents/users/$(email())).data; }
+    function isOwner() { return signedIn() && email() in ['deltatradingco.eg@gmail.com']; }
+    function isManager() { return isOwner() || (signedIn() && hasUser() && userDoc().role == 'manager'); }
+    function isTech() { return signedIn() && hasUser() && userDoc().role == 'tech'; }
+    function myTech() { return userDoc().techId; }
+    function onlyChanged(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+
+    // حسابات الدخول (المديرين والفنيين)
+    match /users/{e} {
+      allow read: if isManager() || (signedIn() && e == email());
+      allow write: if isManager();
+    }
+
+    match /meta/{doc} {
+      allow read: if isManager() || isTech();
+      allow write: if isManager();
+    }
+
+    match /clients/{id} {
+      allow read: if isManager() || isTech();
+      allow write: if isManager();
+    }
+
+    match /techs/{id} {
+      allow read: if isManager() || isTech();
+      allow write: if isManager();
+    }
+
+    // العقود والقيم المالية: المدير فقط
+    match /contracts/{id} {
+      allow read, write: if isManager();
+    }
+
+    // الفني يحدّث حالة وتقرير زياراته فقط
+    match /visits/{id} {
+      allow read: if isManager() || isTech();
+      allow create, delete: if isManager();
+      allow update: if isManager() || (isTech() && resource.data.techId == myTech()
+                    && onlyChanged(['status', 'work', 'parts', 'notes', 'updatedAt', 'updatedBy']));
+    }
+
+    // الفني يحدّث حالة ونسبة إنجاز أعماله فقط
+    match /jobs/{id} {
+      allow read: if isManager() || isTech();
+      allow create, delete: if isManager();
+      allow update: if isManager() || (isTech() && resource.data.techId == myTech()
+                    && onlyChanged(['status', 'progress', 'notes', 'updatedAt', 'updatedBy']));
+    }
+
+    // سجل الأعمال اليومية: الفني يسجل ويعدّل سجلاته فقط
+    match /logs/{id} {
+      allow read: if isManager() || isTech();
+      allow create: if isManager() || (isTech() && request.resource.data.techId == myTech());
+      allow update: if isManager() || (isTech() && resource.data.techId == myTech() && request.resource.data.techId == myTech());
+      allow delete: if isManager();
+    }
+  }
+}
