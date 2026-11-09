@@ -422,6 +422,7 @@ const ENT={
   {k:'invNo',l:'رقم الفاتورة',req:1,ph:'مثال: 2026-0145'},
   {k:'date',l:'تاريخ الفاتورة',t:'date',req:1},
   {k:'description',l:'البيان / الوصف',t:'textarea',req:1,full:1,ph:'مثال: قسط صيانة الربع الثاني — عقد Fan Coil'},
+  {k:'attachments',l:'📎 نسخة الفاتورة (PDF أو صورة)',t:'files',full:1},
   {k:'amount',l:'المبلغ (ج.م)',t:'number',req:1},
   {k:'payStatus',l:'حالة الدفع',t:'select',opts:['غير مدفوعة','مدفوعة','مدفوعة جزئياً']},
   {k:'paidAmount',l:'المبلغ المدفوع (لو جزئي)',t:'number'},
@@ -482,7 +483,7 @@ function openForm(key,id,defaults={}){
         <div class="btns"><label class="btn primary" style="cursor:pointer">📷 تصوير الإيصال<input id="ob_${k}_cam" type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="oblPicked('${k}')"></label><label class="btn" style="cursor:pointer">📁 اختيار ملف<input id="ob_${k}_pick" type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="oblPicked('${k}')"></label></div><div id="ob_${k}_picked" class="small muted" style="margin-top:4px"></div></div>
       </div></div></div>`}).join('');
     else if(f.t==='files')input=`${(v||[]).map(a=>`<div class="refbox" style="margin-bottom:6px">📎 <b>${esc(a.name)}</b> <span class="muted small">(${fsize(a.size)})</span> <button type="button" class="btn sm" onclick="openFile('${a.id}')">عرض</button> <label class="small" style="display:inline;font-weight:600"><input type="checkbox" class="f_rm" value="${a.id}" style="width:auto"> حذف</label></div>`).join('')}
-      <div class="btns"><label class="btn primary" style="cursor:pointer">📷 تصوير أمر الشغل<input id="f_cam" type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="pickedFiles()"></label><label class="btn" style="cursor:pointer">📁 اختيار ملف / صورة<input id="f_pick" type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="pickedFiles()"></label></div><div id="f_picked" class="small muted" style="margin-top:6px"></div>`;
+      <div class="btns"><label class="btn primary" style="cursor:pointer">📷 ${key==='invoices'?'تصوير الفاتورة':'تصوير أمر الشغل'}<input id="f_cam" type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="pickedFiles()"></label><label class="btn" style="cursor:pointer">📁 اختيار ملف / صورة<input id="f_pick" type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="pickedFiles()"></label></div><div id="f_picked" class="small muted" style="margin-top:6px"></div>`;
     else if(f.t==='file')input=`${v&&v.id?`<div class="refbox" style="margin-bottom:6px">📎 <b>${esc(v.name)}</b> <span class="muted small">(${fsize(v.size)})</span> <button type="button" class="btn sm" onclick="openFile('${v.id}')">عرض</button> <label class="small" style="display:inline;font-weight:600"><input type="checkbox" id="f_attach_rm" style="width:auto"> حذف الملف</label></div><div class="small muted">أو اختر ملفاً جديداً لاستبداله:</div>`:''}<input id="${idA}" type="file" accept="application/pdf,image/*">`;
     else if(['select','client','tech','contract','job'].includes(f.t))input=`<select id="${idA}" ${dis}>${optsHtml(f,v,obj.clientId)}</select>`;
     else if(f.t==='textarea')input=`<textarea id="${idA}" placeholder="${esc(f.ph||'')}" ${dis}>${esc(v)}</textarea>`;
@@ -610,7 +611,7 @@ function del(key,id){
     if(!confirm(`حذف العميل "${o.name}" (${o.ref})؟`+(rel?`\nسيتم حذف ${rel} سجل مرتبط به (عقود/زيارات/أعمال).`:'')))return;
     db.contracts.filter(x=>x.clientId===id&&x.attachment).forEach(x=>Files.del(x.attachment.id));
     [...db.jobs,...db.visits].filter(x=>x.clientId===id).forEach(x=>(x.attachments||[]).forEach(a=>Files.del(a.id)));
-    db.invoices.filter(x=>x.clientId===id).forEach(r=>oblOn(r).forEach(k=>(r.oblig[k].files||[]).forEach(a=>Files.del(a.id))));
+    db.invoices.filter(x=>x.clientId===id).forEach(r=>{(r.attachments||[]).forEach(a=>Files.del(a.id));oblOn(r).forEach(k=>(r.oblig[k].files||[]).forEach(a=>Files.del(a.id)))});
     ['contracts','visits','jobs','logs','invoices'].forEach(k=>{db[k].filter(x=>x.clientId===id).forEach(x=>drop(k,x.id));db[k]=db[k].filter(x=>x.clientId!==id)});
     db.clients=db.clients.filter(x=>x.id!==id);drop('clients',id);location.hash='#/clients';toast('تم الحذف');return render();
   }
@@ -620,7 +621,7 @@ function del(key,id){
     db.visits=db.visits.filter(v=>!(v.contractId===id&&v.status==='مجدولة'));db.visits.forEach(v=>{if(v.contractId===id){v.contractId='';put('visits',v)}});}
   else if(!confirm('تأكيد الحذف؟'))return;
   if(key==='jobs'||key==='visits')(o.attachments||[]).forEach(a=>Files.del(a.id));
-  if(key==='invoices')oblOn(o).forEach(k=>(o.oblig[k].files||[]).forEach(a=>Files.del(a.id)));
+  if(key==='invoices'){(o.attachments||[]).forEach(a=>Files.del(a.id));oblOn(o).forEach(k=>(o.oblig[k].files||[]).forEach(a=>Files.del(a.id)))}
   db[key]=db[key].filter(x=>x.id!==id);
   if(key==='techs'){['visits','jobs','logs'].forEach(k=>db[k].forEach(x=>{if(x.techId===id){x.techId='';put(k,x)}}));if(MODE==='cloud'&&o.email)Cloud.delUser(o.email)}
   drop(key,id);toast('تم الحذف');render();
@@ -655,7 +656,7 @@ const act=(key,id,extra='')=>isTech()
   :`<div class="btns no-print">${extra}<button class="btn sm" onclick="openForm('${key}','${id}')">تعديل</button><button class="btn sm danger" onclick="del('${key}','${id}')">حذف</button></div>`;
 const COLS={
  invoices:(withClient=true)=>[
-  {h:'رقم الفاتورة',s:r=>r.invNo,v:r=>`<span class="ref">${esc(r.invNo)}</span>`},
+  {h:'رقم الفاتورة',s:r=>r.invNo,v:r=>`<span class="ref">${esc(r.invNo)}</span>${(r.attachments||[]).length?`<div class="btns" style="margin-top:4px">${r.attachments.map((a,i)=>`<button class="btn sm navy" onclick="openFile('${a.id}')" title="${esc(a.name)}">📎 ${r.attachments.length>1?'نسخة '+(i+1):'نسخة الفاتورة'}</button>`).join('')}</div>`:''}`},
   {h:'التاريخ',cls:'nowrap',s:r=>r.date||'',v:r=>fmt(r.date)},
   ...(withClient?[{h:'العميل',v:r=>clLink(r.clientId)}]:[]),
   {h:'البيان',v:r=>`${esc(r.description)}${r.contractId&&byId('contracts',r.contractId)?`<br><span class="ref small">${esc(byId('contracts',r.contractId).no)}</span>`:''}${r.jobId&&byId('jobs',r.jobId)?`<br><span class="ref small">${esc(byId('jobs',r.jobId).no)}</span>`:''}`},
@@ -993,7 +994,7 @@ function saveManagers(){
 }
 function download(name,content,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
 async function exportJSON(){toast('جاري تجهيز النسخة الاحتياطية...');db.settings.lastBackup=today();putSettings();const{users,...data}=db;
-  data.files=[];const all=[...db.contracts.filter(c=>c.attachment).map(c=>({...c.attachment,kind:'contract'})),...[...db.jobs,...db.visits].flatMap(j=>(j.attachments||[]).map(a=>({...a,kind:'job'}))),...db.invoices.flatMap(r=>oblOn(r).flatMap(k=>(r.oblig[k].files||[]).map(a=>({...a,kind:'invoice'}))))];
+  data.files=[];const all=[...db.contracts.filter(c=>c.attachment).map(c=>({...c.attachment,kind:'contract'})),...[...db.jobs,...db.visits].flatMap(j=>(j.attachments||[]).map(a=>({...a,kind:'job'}))),...db.invoices.flatMap(r=>[...(r.attachments||[]),...oblOn(r).flatMap(k=>r.oblig[k].files||[])].map(a=>({...a,kind:'invoice'})))];
   for(const a of all){try{const b=await Files.get(a.id);if(b)data.files.push({id:a.id,name:a.name,type:a.type,kind:a.kind,data:await blobToB64(b)})}catch(e){console.error(e)}}
   download(`delta-backup-${today()}.json`,JSON.stringify(data),'application/json');toast('تم تنزيل النسخة الاحتياطية');if(location.hash.includes('settings')||location.hash.includes('dashboard')||!location.hash)render()}
 function mailBackup(){location.href=`mailto:${db.settings.email}?subject=${encodeURIComponent('نسخة احتياطية - Delta Trading Co. '+fmt(today()))}&body=${encodeURIComponent('أرفق ملف النسخة الاحتياطية (delta-backup-'+today()+'.json) بعد تنزيله من صفحة الإعدادات.')}`}
@@ -1078,12 +1079,12 @@ async function uploadOblig(obj,k,files){
 }
 async function uploadMany(key,obj,files){
   toast(`جاري رفع ${files.length} ملف...`);let ok=0;
-  for(const f0 of files){try{const f=await shrink(f0);const fid=uid();await Files.put(fid,f,'job');
+  for(const f0 of files){try{const f=await shrink(f0);const fid=uid();await Files.put(fid,f,key==='invoices'?'invoice':'job');
     obj.attachments=[...(obj.attachments||[]),{id:fid,name:f.name,type:f.type||'image/jpeg',size:f.size,uploadedAt:new Date().toISOString(),uploadedBy:ME.email}];put(key,obj);ok++}catch(e){console.error(e)}}
-  toast(ok===files.length?(files.length>1?'تم رفع الملفات ✅':'تم رفع أمر الشغل ✅'):`تم رفع ${ok} من ${files.length} — حاول مرة أخرى للباقي`);render();
+  toast(ok===files.length?(files.length>1?'تم رفع الملفات ✅':key==='invoices'?'تم رفع نسخة الفاتورة ✅':'تم رفع أمر الشغل ✅'):`تم رفع ${ok} من ${files.length} — حاول مرة أخرى للباقي`);render();
 }
 function openFile(id){
-  const c=db.contracts.find(x=>x.attachment&&x.attachment.id===id),ja=[...[...db.jobs,...db.visits].flatMap(j=>j.attachments||[]),...db.invoices.flatMap(r=>oblOn(r).flatMap(k=>r.oblig[k].files||[]))].find(a=>a.id===id),meta=c?c.attachment:ja||{name:'ملف',type:''};
+  const c=db.contracts.find(x=>x.attachment&&x.attachment.id===id),ja=[...[...db.jobs,...db.visits].flatMap(j=>j.attachments||[]),...db.invoices.flatMap(r=>[...(r.attachments||[]),...oblOn(r).flatMap(k=>r.oblig[k].files||[])])].find(a=>a.id===id),meta=c?c.attachment:ja||{name:'ملف',type:''};
   $('#mTitle').textContent='📎 '+meta.name;
   $('#mForm').innerHTML=`<div class="form" id="fileView" style="text-align:center;padding:30px">جاري تحميل الملف...</div>`;
   $('#mForm').onsubmit=e=>e.preventDefault();
