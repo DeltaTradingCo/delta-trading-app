@@ -88,6 +88,10 @@ a{color:var(--blue);text-decoration:none}
 .top-sw{display:none}
 @media (max-width:900px){.side-sw{display:none}.top-sw{display:flex;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:53px;z-index:19}.top-sw button{background:var(--gray-l);color:var(--muted)}.top-sw button.on{background:var(--navy);color:#fff}}
 @media print{.divsw{display:none!important}}
+.oblbox{border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:8px;background:#fafbfc}
+.oblbox.on{border-color:var(--green);background:#fff}
+.oblhead{display:flex!important;align-items:center;gap:6px;cursor:pointer;margin:0!important}.oblhead input{width:auto!important}
+.oblbody{display:none;margin-top:10px}.oblbox.on .oblbody{display:block}
 .user-m{display:none;align-items:center;gap:8px;font-size:12px}
 .install-bar{display:none;background:var(--green-l);border:1px solid var(--green);border-radius:12px;padding:10px 14px;margin-bottom:14px;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .install-bar.show{display:flex}
@@ -293,8 +297,14 @@ const BADGE={'نشط':'b-green','محتمل':'b-blue','متوقف':'','متاح'
  'ساري':'b-green','منتهي':'b-red','معلق':'b-amber','ملغي':'','لم يبدأ':'b-blue',
  'مجدولة':'b-blue','تمت':'b-green','مؤجلة':'b-amber','ملغاة':'','متأخرة':'b-red',
  'جديد':'b-blue','جاري التنفيذ':'b-amber','مكتمل':'b-green',
- 'تم':'b-green','مدفوعة':'b-green','غير مدفوعة':'b-red','مدفوعة جزئياً':'b-amber','جاري':'b-amber','لم يتم':'b-red','عاجلة':'b-red','مهمة':'b-amber','عادية':''};
+ 'تم':'b-green','لم تُدفع':'b-red','تم الدفع':'b-amber','تم التسليم للعميل':'b-green','مدفوعة':'b-green','غير مدفوعة':'b-red','مدفوعة جزئياً':'b-amber','جاري':'b-amber','لم يتم':'b-red','عاجلة':'b-red','مهمة':'b-amber','عادية':''};
 const invPaid=r=>r.payStatus==='مدفوعة'?Number(r.amount)||0:r.payStatus==='مدفوعة جزئياً'?Math.min(Number(r.paidAmount)||0,Number(r.amount)||0):0;
+const OBL={manpower:'قوى عاملة',insurance:'تأمينات مقاولات'};
+const OBL_ST=['لم تُدفع','تم الدفع','تم التسليم للعميل'];
+const oblOn=r=>Object.keys(OBL).filter(k=>r.oblig&&r.oblig[k]&&r.oblig[k].req);
+const oblUnpaid=r=>oblOn(r).filter(k=>(r.oblig[k].status||'لم تُدفع')==='لم تُدفع');
+const oblUnsub=r=>oblOn(r).filter(k=>r.oblig[k].status!=='تم التسليم للعميل');
+const oblUnpaidAmt=r=>oblUnpaid(r).reduce((a,k)=>a+(Number(r.oblig[k].amount)||0),0);
 const invDue=r=>(Number(r.amount)||0)-invPaid(r);
 const badge=s=>s?`<span class="badge ${BADGE[s]||''}">${esc(s)}</span>`:'';
 
@@ -419,6 +429,7 @@ const ENT={
   {k:'method',l:'طريقة الدفع',t:'select',opts:['','تحويل بنكي','شيك','نقدي','إنستاباي / محفظة','أخرى']},
   {k:'contractId',l:'مرتبطة بعقد (اختياري)',t:'contract'},
   {k:'jobId',l:'مرتبطة بعمل (اختياري)',t:'job'},
+  {k:'oblig',l:'🏛️ قوى عاملة وتأمينات مقاولات (يدفعها Delta ثم تُسلّم إيصالاتها للعميل)',t:'oblig',full:1},
   {k:'notes',l:'ملاحظات',t:'textarea',full:1}],
   defaults:()=>({date:today(),payStatus:'غير مدفوعة'})},
  logs:{one:'عمل يومي',fields:[
@@ -459,7 +470,18 @@ function openForm(key,id,defaults={}){
     const v=obj[f.k]??'';const idA=`f_${f.k}`;
     const dis=fieldRO(key,f.k)?'disabled':'';
     let input;
-    if(f.t==='files')input=`${(v||[]).map(a=>`<div class="refbox" style="margin-bottom:6px">📎 <b>${esc(a.name)}</b> <span class="muted small">(${fsize(a.size)})</span> <button type="button" class="btn sm" onclick="openFile('${a.id}')">عرض</button> <label class="small" style="display:inline;font-weight:600"><input type="checkbox" class="f_rm" value="${a.id}" style="width:auto"> حذف</label></div>`).join('')}
+    if(f.t==='oblig')input=Object.keys(OBL).map(k=>{const o=(v||{})[k]||{};return`<div class="oblbox ${o.req?'on':''}">
+      <label class="oblhead"><input type="checkbox" id="ob_${k}_req" ${o.req?'checked':''} onchange="this.closest('.oblbox').classList.toggle('on',this.checked)"> <b>${OBL[k]}</b> <span class="small muted">— مطلوبة على هذه الفاتورة</span></label>
+      <div class="oblbody"><div class="fgrid">
+       <div class="f"><label>المبلغ (ج.م)</label><input id="ob_${k}_amount" type="number" step="any" value="${esc(o.amount??'')}"></div>
+       <div class="f"><label>الحالة</label><select id="ob_${k}_status">${OBL_ST.map(x=>`<option ${(o.status||'لم تُدفع')===x?'selected':''}>${x}</option>`).join('')}</select></div>
+       <div class="f"><label>تاريخ الدفع</label><input id="ob_${k}_paidDate" type="date" value="${esc(o.paidDate||'')}"></div>
+       <div class="f"><label>تاريخ التسليم للعميل</label><input id="ob_${k}_subDate" type="date" value="${esc(o.subDate||'')}"></div>
+       <div class="f full"><label>📎 إيصال الدفع (PDF أو صورة)</label>
+        ${(o.files||[]).map(a=>`<div class="refbox" style="margin-bottom:6px">📎 <b>${esc(a.name)}</b> <span class="muted small">(${fsize(a.size)})</span> <button type="button" class="btn sm" onclick="openFile('${a.id}')">عرض</button> <label class="small" style="display:inline;font-weight:600"><input type="checkbox" class="ob_rm" data-k="${k}" value="${a.id}" style="width:auto"> حذف</label></div>`).join('')}
+        <div class="btns"><label class="btn primary" style="cursor:pointer">📷 تصوير الإيصال<input id="ob_${k}_cam" type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="oblPicked('${k}')"></label><label class="btn" style="cursor:pointer">📁 اختيار ملف<input id="ob_${k}_pick" type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="oblPicked('${k}')"></label></div><div id="ob_${k}_picked" class="small muted" style="margin-top:4px"></div></div>
+      </div></div></div>`}).join('');
+    else if(f.t==='files')input=`${(v||[]).map(a=>`<div class="refbox" style="margin-bottom:6px">📎 <b>${esc(a.name)}</b> <span class="muted small">(${fsize(a.size)})</span> <button type="button" class="btn sm" onclick="openFile('${a.id}')">عرض</button> <label class="small" style="display:inline;font-weight:600"><input type="checkbox" class="f_rm" value="${a.id}" style="width:auto"> حذف</label></div>`).join('')}
       <div class="btns"><label class="btn primary" style="cursor:pointer">📷 تصوير أمر الشغل<input id="f_cam" type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="pickedFiles()"></label><label class="btn" style="cursor:pointer">📁 اختيار ملف / صورة<input id="f_pick" type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="pickedFiles()"></label></div><div id="f_picked" class="small muted" style="margin-top:6px"></div>`;
     else if(f.t==='file')input=`${v&&v.id?`<div class="refbox" style="margin-bottom:6px">📎 <b>${esc(v.name)}</b> <span class="muted small">(${fsize(v.size)})</span> <button type="button" class="btn sm" onclick="openFile('${v.id}')">عرض</button> <label class="small" style="display:inline;font-weight:600"><input type="checkbox" id="f_attach_rm" style="width:auto"> حذف الملف</label></div><div class="small muted">أو اختر ملفاً جديداً لاستبداله:</div>`:''}<input id="${idA}" type="file" accept="application/pdf,image/*">`;
     else if(['select','client','tech','contract','job'].includes(f.t))input=`<select id="${idA}" ${dis}>${optsHtml(f,v,obj.clientId)}</select>`;
@@ -513,10 +535,26 @@ function fillContact(c){
 function fieldRO(key,k){if(!isTech())return false;if(key==='logs'&&k==='techId')return true;const t=TECH_EDIT[key];return t==='*'?false:!(t||[]).includes(k)}
 function submitForm(){
   const{key,id}=formCtx;const E=ENT[key];const data={};
-  for(const f of E.fields){const el=$('#f_'+f.k);if(!el||fieldRO(key,f.k)||f.t==='file'||f.t==='files')continue;
+  for(const f of E.fields){const el=$('#f_'+f.k);if(!el||fieldRO(key,f.k)||f.t==='file'||f.t==='files'||f.t==='oblig')continue;
     let v=el.value.trim();if(f.t==='number'&&v!=='')v=Number(v);if(f.t==='email')v=v.toLowerCase();data[f.k]=v;
     if(f.req&&(v===''||v==null)){toast('برجاء إدخال: '+f.l);el.focus();return}}
   if(isTech()&&key==='logs')data.techId=ME.techId;
+  let oblNew={},oblRm=[];
+  if(key==='invoices'&&$('#ob_manpower_req')){
+    const prev=(id&&byId('invoices',id)?.oblig)||{};data.oblig={};
+    oblRm=[...document.querySelectorAll('.ob_rm:checked')].map(x=>x.value);
+    for(const k of Object.keys(OBL)){
+      const req=$('#ob_'+k+'_req').checked,old=prev[k]||{};let files=(old.files||[]).filter(a=>!oblRm.includes(a.id));
+      if(!req){files.forEach(a=>oblRm.push(a.id));data.oblig[k]={req:false};continue}
+      const o={req:true,amount:$('#ob_'+k+'_amount').value===''?'':Number($('#ob_'+k+'_amount').value),status:$('#ob_'+k+'_status').value,paidDate:$('#ob_'+k+'_paidDate').value,subDate:$('#ob_'+k+'_subDate').value,files};
+      if(o.amount===''){toast('اكتب مبلغ '+OBL[k]);$('#ob_'+k+'_amount').focus();return}
+      if(o.status!=='لم تُدفع'&&!o.paidDate)o.paidDate=today();
+      if(o.status==='تم التسليم للعميل'&&!o.subDate)o.subDate=today();
+      if(o.status==='لم تُدفع'){o.paidDate='';o.subDate=''}
+      data.oblig[k]=o;
+      const nf=[...($('#ob_'+k+'_cam').files||[]),...($('#ob_'+k+'_pick').files||[])];if(nf.length)oblNew[k]=nf;
+    }
+  }
   if(key==='invoices'){
     if(db.invoices.some(x=>x.id!==id&&String(x.invNo).trim()===String(data.invNo).trim())){toast('رقم الفاتورة مسجل من قبل');return}
     if(data.payStatus==='مدفوعة جزئياً'&&!(Number(data.paidAmount)>0)){toast('اكتب المبلغ المدفوع');$('#f_paidAmount').focus();return}
@@ -556,6 +594,7 @@ function submitForm(){
   }else if(rmFile&&obj.attachment){Files.del(obj.attachment.id);obj.attachment=null;put(key,obj)}
   if(rmMulti.length){rmMulti.forEach(fid=>{if(!isTech())Files.del(fid)});obj.attachments=(obj.attachments||[]).filter(a=>!rmMulti.includes(a.id));put(key,obj)}
   if(multi.length)uploadMany(key,obj,multi);
+  if(key==='invoices'){oblRm.forEach(fid=>Files.del(fid));for(const k in oblNew)uploadOblig(obj,k,oblNew[k])}
   if(key==='techs'&&MODE==='cloud'){
     if(oldEmail&&oldEmail!==obj.email)Cloud.delUser(oldEmail);
     if(obj.email)Cloud.setUser(obj.email,{email:obj.email,role:'tech',techId:obj.id,name:obj.name});
@@ -571,6 +610,7 @@ function del(key,id){
     if(!confirm(`حذف العميل "${o.name}" (${o.ref})؟`+(rel?`\nسيتم حذف ${rel} سجل مرتبط به (عقود/زيارات/أعمال).`:'')))return;
     db.contracts.filter(x=>x.clientId===id&&x.attachment).forEach(x=>Files.del(x.attachment.id));
     [...db.jobs,...db.visits].filter(x=>x.clientId===id).forEach(x=>(x.attachments||[]).forEach(a=>Files.del(a.id)));
+    db.invoices.filter(x=>x.clientId===id).forEach(r=>oblOn(r).forEach(k=>(r.oblig[k].files||[]).forEach(a=>Files.del(a.id))));
     ['contracts','visits','jobs','logs','invoices'].forEach(k=>{db[k].filter(x=>x.clientId===id).forEach(x=>drop(k,x.id));db[k]=db[k].filter(x=>x.clientId!==id)});
     db.clients=db.clients.filter(x=>x.id!==id);drop('clients',id);location.hash='#/clients';toast('تم الحذف');return render();
   }
@@ -580,6 +620,7 @@ function del(key,id){
     db.visits=db.visits.filter(v=>!(v.contractId===id&&v.status==='مجدولة'));db.visits.forEach(v=>{if(v.contractId===id){v.contractId='';put('visits',v)}});}
   else if(!confirm('تأكيد الحذف؟'))return;
   if(key==='jobs'||key==='visits')(o.attachments||[]).forEach(a=>Files.del(a.id));
+  if(key==='invoices')oblOn(o).forEach(k=>(o.oblig[k].files||[]).forEach(a=>Files.del(a.id)));
   db[key]=db[key].filter(x=>x.id!==id);
   if(key==='techs'){['visits','jobs','logs'].forEach(k=>db[k].forEach(x=>{if(x.techId===id){x.techId='';put(k,x)}}));if(MODE==='cloud'&&o.email)Cloud.delUser(o.email)}
   drop(key,id);toast('تم الحذف');render();
@@ -621,6 +662,7 @@ const COLS={
   {h:'المبلغ',cls:'nowrap',s:r=>Number(r.amount)||0,v:r=>`<b>${money(r.amount)}</b>`},
   {h:'المدفوع',cls:'nowrap',s:r=>invPaid(r),v:r=>invPaid(r)?money(invPaid(r)):'—'},
   {h:'المتبقي',cls:'nowrap',s:r=>invDue(r),v:r=>invDue(r)>0?`<b style="color:var(--red)">${money(invDue(r))}</b>`:'<span style="color:var(--green-d)">0</span>'},
+  {h:'قوى عاملة / تأمينات',s:r=>oblUnpaid(r).length*2+oblUnsub(r).length,v:r=>oblOn(r).length?oblOn(r).map(k=>{const o=r.oblig[k];return`<div class="small" style="margin-bottom:3px;white-space:nowrap"><b>${OBL[k]}</b> ${money(o.amount)} ${badge(o.status||'لم تُدفع')} ${(o.files||[]).map(a=>`<button class="btn sm navy" style="padding:0 6px" onclick="openFile('${a.id}')" title="${esc(a.name)}">📎</button>`).join('')}</div>`}).join(''):'<span class="muted small">—</span>'},
   {h:'الحالة',v:r=>`${badge(r.payStatus)}${r.paidDate?`<br><span class="small muted">${fmt(r.paidDate)}${r.method?' · '+esc(r.method):''}</span>`:''}`},
   {h:'',v:r=>act('invoices',r.id,r.payStatus!=='مدفوعة'?`<button class="btn sm primary" onclick="markPaid('${r.id}')">✓ تم الدفع</button>`:'')}],
  visits:(withClient=true)=>[
@@ -700,6 +742,7 @@ function viewDashboard(){
    <div class="stat" onclick="location.hash='#/contracts'"><div class="n">${active.length}</div><div class="l">عقود سارية</div></div>
    <div class="stat blue" onclick="location.hash='#/daily'"><div class="n">${vToday.length}</div><div class="l">زيارات اليوم</div></div>
    <div class="stat red" onclick="ui.visits_status='متأخرة';location.hash='#/visits'"><div class="n">${late.length}</div><div class="l">زيارات متأخرة</div></div>
+   ${(()=>{const up=db.invoices.filter(r=>oblUnpaid(r).length),us=db.invoices.filter(r=>oblUnsub(r).length);return up.length||us.length?`<div class="stat amber" onclick="ui.invoices_obl='${up.length?'unpaid':'unsub'}';ui.invoices_pay='';location.hash='#/invoices'"><div class="n" style="font-size:22px">${up.length} / ${us.length}</div><div class="l">قوى عاملة وتأمينات: لم تُدفع / لم تُسلّم للعميل</div></div>`:''})()}
    <div class="stat red" onclick="ui.invoices_pay='due';location.hash='#/invoices'"><div class="n" style="font-size:22px">${money(db.invoices.reduce((a,r)=>a+invDue(r),0))}</div><div class="l">فواتير غير مسددة (${db.invoices.filter(r=>invDue(r)>0).length})</div></div>
    <div class="stat amber" onclick="ui.jobs_status='جاري التنفيذ';location.hash='#/jobs'"><div class="n">${jRun.length}</div><div class="l">أعمال جارية</div></div>
    <div class="stat blue" onclick="ui.jobs_status='جديد';location.hash='#/jobs'"><div class="n">${jNew.length}</div><div class="l">أعمال جديدة</div></div>
@@ -782,14 +825,15 @@ function viewClient(id){
   <div class="card"><h2>📝 سجل الأعمال اليومية (${logs.length})</h2>${table(logs,COLS.logs(false),'لا يوجد سجل','c_logs')}</div>`;
 }
 function invSummary(list){const tot=list.reduce((a,r)=>a+(Number(r.amount)||0),0),paid=list.reduce((a,r)=>a+invPaid(r),0);
-  return`<div class="stats" style="margin-bottom:12px"><div class="stat navy"><div class="n" style="font-size:22px">${money(tot)}</div><div class="l">إجمالي الفواتير (${list.length})</div></div><div class="stat"><div class="n" style="font-size:22px">${money(paid)}</div><div class="l">المدفوع</div></div><div class="stat red"><div class="n" style="font-size:22px">${money(tot-paid)}</div><div class="l">المتبقي على العميل</div></div></div>`}
+  return`<div class="stats" style="margin-bottom:12px"><div class="stat navy"><div class="n" style="font-size:22px">${money(tot)}</div><div class="l">إجمالي الفواتير (${list.length})</div></div><div class="stat"><div class="n" style="font-size:22px">${money(paid)}</div><div class="l">المدفوع</div></div><div class="stat red"><div class="n" style="font-size:22px">${money(tot-paid)}</div><div class="l">المتبقي على العميل</div></div>${(()=>{const up=list.filter(r=>oblUnpaid(r).length),us=list.filter(r=>oblUnsub(r).length);return up.length||us.length?`<div class="stat amber"><div class="n" style="font-size:22px">${money(list.reduce((a,r)=>a+oblUnpaidAmt(r),0))}</div><div class="l">قوى عاملة/تأمينات لم تُدفع (${up.length}) · لم تُسلّم للعميل (${us.length})</div></div>`:''})()}</div>`}
 function markPaid(id){openForm('invoices',id,{payStatus:'مدفوعة',paidDate:today()})}
 function viewInvoices(){
   const months=[...new Set([...db.invoices.map(i=>(i.date||'').slice(0,7)),today().slice(0,7)])].filter(Boolean).sort().reverse().map(m=>[m,m.split('-').reverse().join('/')]);
   listView({key:'invoices',title:'الفواتير',add:'فاتورة جديدة',
    rows:()=>[...db.invoices].sort((a,b)=>(b.date||'').localeCompare(a.date||'')),
    search:r=>[r.invNo,r.description,r.notes,clName(r.clientId),r.method].join(' '),
-   filters:[{k:'pay',l:'الدفع',opts:['غير مدفوعة','مدفوعة جزئياً','مدفوعة',['due','كل غير المسدد']],test:(r,v)=>v==='due'?invDue(r)>0:r.payStatus===v},
+   filters:[{k:'obl',l:'قوى عاملة/تأمينات',opts:[['unpaid','⏳ لم يدفعها Delta'],['unsub','📤 لم تُسلّم للعميل'],['has','عليها التزامات'],['none','بدون التزامات']],test:(r,v)=>v==='unpaid'?oblUnpaid(r).length>0:v==='unsub'?oblUnsub(r).length>0:v==='has'?oblOn(r).length>0:!oblOn(r).length},
+    {k:'pay',l:'الدفع',opts:['غير مدفوعة','مدفوعة جزئياً','مدفوعة',['due','كل غير المسدد']],test:(r,v)=>v==='due'?invDue(r)>0:r.payStatus===v},
     clientFilter(),
     {k:'month',l:'الشهر',opts:months,test:(r,v)=>(r.date||'').startsWith(v)}],
    cols:COLS.invoices(true),summary:invSummary});
@@ -949,7 +993,7 @@ function saveManagers(){
 }
 function download(name,content,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
 async function exportJSON(){toast('جاري تجهيز النسخة الاحتياطية...');db.settings.lastBackup=today();putSettings();const{users,...data}=db;
-  data.files=[];const all=[...db.contracts.filter(c=>c.attachment).map(c=>({...c.attachment,kind:'contract'})),...[...db.jobs,...db.visits].flatMap(j=>(j.attachments||[]).map(a=>({...a,kind:'job'})))];
+  data.files=[];const all=[...db.contracts.filter(c=>c.attachment).map(c=>({...c.attachment,kind:'contract'})),...[...db.jobs,...db.visits].flatMap(j=>(j.attachments||[]).map(a=>({...a,kind:'job'}))),...db.invoices.flatMap(r=>oblOn(r).flatMap(k=>(r.oblig[k].files||[]).map(a=>({...a,kind:'invoice'}))))];
   for(const a of all){try{const b=await Files.get(a.id);if(b)data.files.push({id:a.id,name:a.name,type:a.type,kind:a.kind,data:await blobToB64(b)})}catch(e){console.error(e)}}
   download(`delta-backup-${today()}.json`,JSON.stringify(data),'application/json');toast('تم تنزيل النسخة الاحتياطية');if(location.hash.includes('settings')||location.hash.includes('dashboard')||!location.hash)render()}
 function mailBackup(){location.href=`mailto:${db.settings.email}?subject=${encodeURIComponent('نسخة احتياطية - Delta Trading Co. '+fmt(today()))}&body=${encodeURIComponent('أرفق ملف النسخة الاحتياطية (delta-backup-'+today()+'.json) بعد تنزيله من صفحة الإعدادات.')}`}
@@ -983,9 +1027,10 @@ function exportCSV(key){
    contracts:[['no','رقم العقد'],['_client','العميل'],['title','الموضوع'],['start','البداية'],['end','النهاية'],['_freq','الدورية'],['value','القيمة'],['_status','الحالة'],['units','الأجهزة'],['notes','ملاحظات']],
    visits:[['no','رقم الزيارة'],['date','التاريخ'],['_client','العميل'],['type','النوع'],['_tech','الفني'],['_vstatus','الحالة'],['work','الأعمال المنفذة'],['parts','قطع الغيار'],['notes','ملاحظات']],
    jobs:[['no','رقم العمل'],['_client','العميل'],['title','العمل'],['kind','النوع'],['_tech','الفني'],['status','الحالة'],['priority','الأولوية'],['start','البدء'],['due','التسليم'],['progress','الإنجاز %'],['value','القيمة'],['details','التفاصيل']],
-   invoices:[['invNo','رقم الفاتورة'],['date','التاريخ'],['_client','العميل'],['description','البيان'],['amount','المبلغ'],['payStatus','حالة الدفع'],['_paid','المدفوع'],['_due','المتبقي'],['paidDate','تاريخ الدفع'],['method','طريقة الدفع'],['notes','ملاحظات']],
+   invoices:[['invNo','رقم الفاتورة'],['date','التاريخ'],['_client','العميل'],['description','البيان'],['amount','المبلغ'],['payStatus','حالة الدفع'],['_paid','المدفوع'],['_due','المتبقي'],['paidDate','تاريخ الدفع'],['method','طريقة الدفع'],['_mp','قوى عاملة'],['_mpS','حالة القوى العاملة'],['_ins','تأمينات مقاولات'],['_insS','حالة التأمينات'],['notes','ملاحظات']],
    logs:[['date','التاريخ'],['_tech','الفني'],['_client','العميل'],['work','العمل المنفذ'],['hours','الساعات'],['status','الحالة'],['notes','ملاحظات']]}[key];
-  const val=(r,k)=>k==='_div'?DIVS[clDiv(r)].short:k==='_paid'?invPaid(r):k==='_due'?invDue(r):k==='_client'?clName(r.clientId):k==='_tech'?(tech(r.techId)?.name||''):k==='_freq'?freqName(r.frequency):k==='_status'?contractStatus(r):k==='_vstatus'?visitStatus(r):r[k];
+  const ob=(r,k,f)=>r.oblig&&r.oblig[k]&&r.oblig[k].req?(f==='s'?r.oblig[k].status||'لم تُدفع':r.oblig[k].amount):'';
+  const val=(r,k)=>k==='_mp'?ob(r,'manpower'):k==='_mpS'?ob(r,'manpower','s'):k==='_ins'?ob(r,'insurance'):k==='_insS'?ob(r,'insurance','s'):k==='_div'?DIVS[clDiv(r)].short:k==='_paid'?invPaid(r):k==='_due'?invDue(r):k==='_client'?clName(r.clientId):k==='_tech'?(tech(r.techId)?.name||''):k==='_freq'?freqName(r.frequency):k==='_status'?contractStatus(r):k==='_vstatus'?visitStatus(r):r[k];
   const q=x=>`"${String(x??'').replace(/"/g,'""')}"`;
   const csv='﻿'+[map.map(m=>q(m[1])).join(','),...db[key].map(r=>map.map(m=>q(val(r,m[0]))).join(','))].join('\r\n');
   download(`delta-${key}-${today()}.csv`,csv,'text/csv;charset=utf-8');
@@ -1024,6 +1069,13 @@ async function shrink(file){
     const c=document.createElement('canvas');c.width=Math.round(bmp.width*k);c.height=Math.round(bmp.height*k);c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
     const b=await new Promise(r=>c.toBlob(r,'image/jpeg',0.82));return b&&b.size<file.size?new File([b],file.name.replace(/\.\w+$/,'')+'.jpg',{type:'image/jpeg'}):file}catch(e){return file}
 }
+function oblPicked(k){const n=[...($('#ob_'+k+'_cam')?.files||[]),...($('#ob_'+k+'_pick')?.files||[])];$('#ob_'+k+'_picked').textContent=n.length?`✅ ${n.length} ملف — سيتم الرفع عند الحفظ: `+n.map(f=>f.name).join('، '):''}
+async function uploadOblig(obj,k,files){
+  toast('جاري رفع إيصال '+OBL[k]+'...');let ok=0;
+  for(const f0 of files){try{const f=await shrink(f0);const fid=uid();await Files.put(fid,f,'invoice');
+    obj.oblig[k].files=[...(obj.oblig[k].files||[]),{id:fid,name:f.name,type:f.type||'image/jpeg',size:f.size,uploadedAt:new Date().toISOString(),uploadedBy:ME.email}];put('invoices',obj);ok++}catch(e){console.error(e)}}
+  toast(ok===files.length?'تم رفع إيصال '+OBL[k]+' ✅':`تم رفع ${ok} من ${files.length}`);render();
+}
 async function uploadMany(key,obj,files){
   toast(`جاري رفع ${files.length} ملف...`);let ok=0;
   for(const f0 of files){try{const f=await shrink(f0);const fid=uid();await Files.put(fid,f,'job');
@@ -1031,7 +1083,7 @@ async function uploadMany(key,obj,files){
   toast(ok===files.length?(files.length>1?'تم رفع الملفات ✅':'تم رفع أمر الشغل ✅'):`تم رفع ${ok} من ${files.length} — حاول مرة أخرى للباقي`);render();
 }
 function openFile(id){
-  const c=db.contracts.find(x=>x.attachment&&x.attachment.id===id),ja=[...db.jobs,...db.visits].flatMap(j=>j.attachments||[]).find(a=>a.id===id),meta=c?c.attachment:ja||{name:'ملف',type:''};
+  const c=db.contracts.find(x=>x.attachment&&x.attachment.id===id),ja=[...[...db.jobs,...db.visits].flatMap(j=>j.attachments||[]),...db.invoices.flatMap(r=>oblOn(r).flatMap(k=>r.oblig[k].files||[]))].find(a=>a.id===id),meta=c?c.attachment:ja||{name:'ملف',type:''};
   $('#mTitle').textContent='📎 '+meta.name;
   $('#mForm').innerHTML=`<div class="form" id="fileView" style="text-align:center;padding:30px">جاري تحميل الملف...</div>`;
   $('#mForm').onsubmit=e=>e.preventDefault();
