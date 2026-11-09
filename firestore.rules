@@ -55,12 +55,12 @@ service cloud.firestore {
       allow update, delete: if isManager();
     }
 
-    // الفني يحدّث حالة وتقرير زياراته فقط
+    // الفني يحدّث حالة وتقرير زياراته ويرفع أمر الشغل فقط
     match /visits/{id} {
       allow read: if isManager() || isTech();
       allow create, delete: if isManager();
       allow update: if isManager() || (isTech() && resource.data.techId == myTech()
-                    && onlyChanged(['status', 'work', 'parts', 'notes', 'updatedAt', 'updatedBy']));
+                    && onlyChanged(['status', 'work', 'parts', 'notes', 'attachments', 'updatedAt', 'updatedBy']));
     }
 
     // الأعمال: الفني يضيف أعمالاً جديدة ويتابع أعماله (بدون القيمة المالية)، والحذف للمدير فقط
