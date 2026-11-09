@@ -356,10 +356,10 @@ const ENT={
   {k:'phone',l:'الموبايل / واتساب',t:'tel'},
   {k:'email',l:'حساب Gmail للدخول على البرنامج',t:'email',ph:'name@gmail.com'},
   {k:'division',l:'القسم',t:'select',opts:[['','الاتنين (HVAC + Laundry)'],['hvac','❄️ HVAC'],['laundry','🧺 Laundry']]},
-  {k:'specialty',l:'التخصص',t:'select',opts:['تكييف مركزي','تكييف سبليت','تبريد','معدات مغاسل','كهرباء','سباكة','عام','مساعد فني']},
+  {k:'specialty',l:'التخصص',t:'select',opts:['فني تكييف','مساعد فني تكييف','فني مغاسل','مساعد فني مغاسل']},
   {k:'status',l:'الحالة',t:'select',opts:['متاح','غير نشط']},
   {k:'notes',l:'ملاحظات',t:'textarea',full:1}],
-  defaults:()=>({status:'متاح',specialty:'تكييف سبليت',division:ui0.div||''})},
+  defaults:()=>({status:'متاح',specialty:ui0.div==='laundry'?'فني مغاسل':'فني تكييف',division:ui0.div||''})},
  contracts:{one:'عقد',fields:[
   {k:'clientId',l:'العميل',t:'client',req:1,full:1},
   {k:'kind',l:'نوع العقد',t:'select',opts:CONTRACT_KINDS},
