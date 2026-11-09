@@ -320,6 +320,9 @@ function nextClientRef(div='hvac'){
   return{seq,ref:`${divPrefix(div)}-${String(seq).padStart(3,'0')}-${yy}`};
 }
 const LETTER={contracts:'C',visits:'V',jobs:'J'};
+const EXPIRY_DAYS=60;
+const daysLeft=c=>Math.round((parse(c.end)-parse(today()))/864e5);
+const expiringContracts=()=>db.contracts.filter(c=>contractStatus(c)==='ساري'&&c.end&&daysLeft(c)<=EXPIRY_DAYS).sort((a,b)=>a.end.localeCompare(b.end));
 function childNo(key,clientId){
   const c=cl(clientId);const n=db[key].filter(x=>x.clientId===clientId).reduce((m,x)=>Math.max(m,x.n||0),0)+1;
   return{n,no:`${c?c.ref:'—'}/${LETTER[key]}${n}`};
@@ -630,7 +633,7 @@ const COLS={
   {h:'رقم العقد',v:r=>`<span class="ref">${esc(r.no)}</span>`},
   ...(withClient?[{h:'العميل',v:r=>clLink(r.clientId)}]:[]),
   {h:'الموضوع',v:r=>`${esc(r.title)}<br><span class="small muted">${esc(r.kind||'')}</span>`},
-  {h:'المدة',cls:'nowrap',s:r=>r.end||'',v:r=>`${fmt(r.start)} ← ${fmt(r.end)}`},
+  {h:'المدة',cls:'nowrap',s:r=>r.end||'',v:r=>`${fmt(r.start)} ← ${fmt(r.end)}${contractStatus(r)==='ساري'&&daysLeft(r)<=EXPIRY_DAYS?`<br><b class="small" style="color:${daysLeft(r)<=30?'var(--red)':'var(--amber)'}">⏰ باقي ${daysLeft(r)} يوم</b>`:''}`},
   {h:'الزيارات',s:r=>Number(r.frequency)||0,v:r=>{const vs=db.visits.filter(v=>v.contractId===r.id);return`${freqName(r.frequency)}<br><span class="small muted">تمت ${vs.filter(v=>v.status==='تمت').length} من ${vs.length}</span>`}},
   {h:'القيمة',cls:'nowrap',s:r=>r.value===''||r.value==null?'':Number(r.value),v:r=>money(r.value)},
   {h:'الحالة',v:r=>badge(contractStatus(r))},
@@ -660,10 +663,10 @@ const NAV=[['dashboard','🏠','الرئيسية'],['daily','📋','المتاب
 const NAV_TECH=[['daily','📋','مهامي اليومية'],['clients','👥','العملاء'],['jobs','🏗️','الأعمال'],['visits','🔧','زياراتي'],['logs','📝','سجل أعمالي']];
 function renderNav(page){
   const mine=x=>!isTech()||x.techId===ME.techId;
-  const late=db.visits.filter(v=>visitStatus(v)==='متأخرة'&&mine(v)).length;
+  const late=db.visits.filter(v=>visitStatus(v)==='متأخرة'&&mine(v)).length,expN=isTech()?0:expiringContracts().length;
   $('#userM').innerHTML=ME&&MODE==='cloud'?`${ME.photo?`<img src="${esc(ME.photo)}" style="width:28px;height:28px;border-radius:50%" referrerpolicy="no-referrer">`:''}<span>${esc((ME.name||ME.email).split(' ')[0])}<br><a href="#" onclick="if(confirm('تسجيل الخروج؟'))Cloud.logout();return false">خروج</a></span>`:'';
   const who=ME&&MODE==='cloud'?`<div class="who" style="padding:8px 12px;border-top:1px solid rgba(255,255,255,.08);margin-top:8px;font-size:13px;color:#cfd4ea">${ME.photo?`<img src="${esc(ME.photo)}" style="width:26px;height:26px;border-radius:50%;vertical-align:middle;margin-inline-end:6px" referrerpolicy="no-referrer">`:''}${esc(ME.name||ME.email)}<br><span class="small" style="color:#9aa1c2">${isTech()?'فني':'مدير'} · <span dir="ltr">${esc(ME.email)}</span></span><br><a href="#" onclick="Cloud.logout();return false" style="color:#9fd36a">تسجيل الخروج</a></div>`:'';
-  $('#nav').innerHTML=(isTech()?NAV_TECH:NAV).map(([k,i,l])=>`<a href="#/${k}" class="${page===k||(page==='client'&&k==='clients')?'on':''}"><span class="ic">${i}</span>${l}${k==='visits'&&late?`<span class="cnt">${late}</span>`:''}</a>`).join('')+who;
+  $('#nav').innerHTML=(isTech()?NAV_TECH:NAV).map(([k,i,l])=>`<a href="#/${k}" class="${page===k||(page==='client'&&k==='clients')?'on':''}"><span class="ic">${i}</span>${l}${k==='visits'&&late?`<span class="cnt">${late}</span>`:''}${k==='contracts'&&expN?`<span class="cnt" style="background:var(--amber)">${expN}</span>`:''}</a>`).join('')+who;
   const sw=[['','الكل'],['hvac','❄️ HVAC'],['laundry','🧺 Laundry']].map(([k,l])=>`<button class="${ui0.div===k?'on':''}" onclick="setDiv('${k}')">${l}</button>`).join('');
   $('#divSide').innerHTML=sw;$('#divTop').innerHTML=sw;
   $('#sideFoot').innerHTML=esc(db.settings.email);
@@ -677,7 +680,7 @@ function viewDashboard(){
   const late=db.visits.filter(v=>visitStatus(v)==='متأخرة').sort((a,b)=>a.date.localeCompare(b.date));
   const upcoming=db.visits.filter(v=>v.date>t&&v.date<=w&&v.status==='مجدولة').sort((a,b)=>a.date.localeCompare(b.date));
   const active=db.contracts.filter(c=>contractStatus(c)==='ساري');
-  const expiring=active.filter(c=>c.end<=addDays(t,30)).sort((a,b)=>a.end.localeCompare(b.end));
+  const expiring=expiringContracts();
   const jNew=db.jobs.filter(j=>j.status==='جديد'),jRun=db.jobs.filter(j=>j.status==='جاري التنفيذ');
   const logsToday=db.logs.filter(l=>l.date===t);
   const lb=db.settings.lastBackup;const needBk=db.clients.length&&(!lb||lb<addDays(t,MODE==='local'?-7:-30));
@@ -687,6 +690,7 @@ function viewDashboard(){
   <div class="page-head"><div><h1>أهلاً بك في <bdi>${esc(db.settings.company)}</bdi>${ui0.div?' — '+DIVS[ui0.div].icon+' '+DIVS[ui0.div].short:''}</h1><div class="sub">${dayName(t)} ${fmt(t)}</div></div>
    <div class="btns"><button class="btn primary" onclick="openForm('clients')">+ عميل جديد</button><button class="btn" onclick="openForm('jobs')">+ عمل جديد</button><button class="btn" onclick="openForm('visits')">+ زيارة</button><button class="btn navy" onclick="location.hash='#/daily'">📋 متابعة اليوم</button></div></div>
   ${needBk?`<div class="alert"><span>${MODE==='local'?'⚠️ لم تأخذ نسخة احتياطية منذ أكثر من أسبوع. البيانات محفوظة في هذا المتصفح فقط.':'💾 يُنصح بتنزيل نسخة احتياطية شهرية من البيانات.'}</span><button class="btn sm navy" onclick="exportJSON()">تنزيل نسخة احتياطية الآن</button></div>`:''}
+  ${expiring.length?`<div class="alert no-print" style="background:var(--red-l);border-color:#f3b4b4;color:#8a1f1f"><span>⏰ <b>${expiring.length} عقد</b> ينتهي خلال ${EXPIRY_DAYS} يوم — أقربها: <b>${esc(clName(expiring[0].clientId))}</b> (${esc(expiring[0].no)}) باقي ${daysLeft(expiring[0])} يوم</span><div class="btns"><button class="btn sm" onclick="ui.contracts_exp='${EXPIRY_DAYS}';location.hash='#/contracts'">عرض العقود</button>${notifyBtn()}</div></div>`:''}
   ${installBar()}
   ${!db.clients.length?`<div class="card"><h2>ابدأ من هنا 👋</h2><ol style="margin:0;padding-inline-start:20px"><li>أضف <a href="#/techs">الفنيين</a> (الاسم ورقم الواتساب).</li><li>أضف <a href="#/clients">العملاء</a> — كل عميل يأخذ رقم مرجعي تلقائي حسب القسم: <span class="ref">${esc(nextClientRef('hvac').ref)}</span> للتكييف و <span class="ref">${esc(nextClientRef('laundry').ref)}</span> للمغاسل.</li><li>سجّل <a href="#/contracts">عقود الصيانة</a> وأنشئ جدول الزيارات تلقائياً.</li><li>تابع الشغل يومياً من <a href="#/daily">المتابعة اليومية</a> وأرسل مهام كل فني على الواتساب.</li></ol></div>`:''}
   <div class="stats">
@@ -702,7 +706,7 @@ function viewDashboard(){
    <div class="card"><h2>🔧 زيارات اليوم <button class="btn sm" onclick="openForm('visits')">+ زيارة</button></h2>${li(vToday,vItem,'لا توجد زيارات اليوم')}</div>
    <div class="card"><h2>⏰ زيارات متأخرة لم تتم</h2>${li(late,vItem,'لا توجد زيارات متأخرة 👍')}</div>
    <div class="card"><h2>📅 زيارات الأسبوع القادم</h2>${li(upcoming,vItem,'لا توجد زيارات مجدولة خلال 7 أيام')}</div>
-   <div class="card"><h2>📄 عقود تنتهي خلال 30 يوم</h2>${li(expiring,c=>`<div class="list-item"><div><div class="t">${clLink(c.clientId)}</div><div class="small muted"><span class="ref">${esc(c.no)}</span> · ينتهي ${fmt(c.end)}</div></div><button class="btn sm" onclick="renewContract('${c.id}')">🔄 تجديد</button></div>`,'لا توجد عقود قاربت على الانتهاء')}</div>
+   <div class="card"><h2>📄 عقود تنتهي خلال ${EXPIRY_DAYS} يوم</h2>${li(expiring,c=>`<div class="list-item"><div><div class="t">${clLink(c.clientId)}</div><div class="small muted"><span class="ref">${esc(c.no)}</span> · ينتهي ${fmt(c.end)} · <b style="color:${daysLeft(c)<=30?'var(--red)':'var(--amber)'}">باقي ${daysLeft(c)} يوم</b></div></div><button class="btn sm" onclick="renewContract('${c.id}')">🔄 تجديد</button></div>`,'لا توجد عقود قاربت على الانتهاء')}</div>
    <div class="card"><h2>🏗️ الأعمال الجارية والجديدة <a class="small" href="#/jobs">عرض الكل</a></h2>${li([...jNew,...jRun].sort((a,b)=>(b.priority==='عاجلة')-(a.priority==='عاجلة')),j=>`<div class="list-item"><div><div class="t">${esc(j.title)}</div><div class="small muted">${esc(clName(j.clientId))} · ${tech(j.techId)?esc(tech(j.techId).name):'بدون فني'}${j.due?' · تسليم '+fmt(j.due):''}</div></div><div class="btns">${badge(j.status)}${j.priority!=='عادية'?badge(j.priority):''}<button class="btn sm" onclick="openForm('jobs','${j.id}')">فتح</button></div></div>`,'لا توجد أعمال جارية')}</div>
    <div class="card"><h2>📝 ما تم تسجيله اليوم <button class="btn sm" onclick="openForm('logs')">+ تسجيل</button></h2>${li(logsToday,l=>`<div class="list-item"><div><div class="t">${tech(l.techId)?esc(tech(l.techId).name):'—'}</div><div class="small">${esc(l.work)}</div><div class="small muted">${esc(clName(l.clientId))}</div></div>${badge(l.status)}</div>`,'لم يُسجَّل أي عمل اليوم بعد')}</div>
   </div>`;
@@ -795,7 +799,7 @@ function viewContracts(){
    filters:[clientFilter(),{k:'status',l:'الحالة',opts:['ساري','لم يبدأ','منتهي','معلق','ملغي'],test:(c,v)=>contractStatus(c)===v},
     {k:'kind',l:'النوع',opts:CONTRACT_KINDS,test:(c,v)=>c.kind===v},
     {k:'att',l:'الملف',opts:[['y','مرفوع'],['n','بدون ملف']],test:(c,v)=>v==='y'?!!c.attachment:!c.attachment},
-    {k:'exp',l:'الانتهاء',opts:[['30','ينتهي خلال 30 يوم'],['60','ينتهي خلال 60 يوم']],test:(c,v)=>contractStatus(c)==='ساري'&&c.end<=addDays(today(),+v)}],
+    {k:'exp',l:'الانتهاء',opts:[['60','ينتهي خلال 60 يوم'],['30','ينتهي خلال 30 يوم'],['7','ينتهي خلال 7 أيام']],test:(c,v)=>contractStatus(c)==='ساري'&&c.end<=addDays(today(),+v)}],
    cols:COLS.contracts(true)});
 }
 function viewVisits(){
@@ -1053,6 +1057,19 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvt=
 window.addEventListener('appinstalled',()=>{installEvt=null;render()});
 if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceWorker.register('sw.js').catch(()=>{});
 
+/* ===================== Contract expiry notifications ===================== */
+function notifyBtn(){return('Notification' in window)&&Notification.permission==='default'?`<button class="btn sm navy" onclick="enableNotify()">🔔 تفعيل التنبيهات</button>`:''}
+async function enableNotify(){try{const r=await Notification.requestPermission();toast(r==='granted'?'تم تفعيل التنبيهات ✅':'لم يتم السماح بالتنبيهات');if(r==='granted'){try{localStorage.removeItem('delta_notified')}catch(e){}checkExpiryNotify()}render()}catch(e){}}
+async function checkExpiryNotify(){
+  if(!isMgr()||!('Notification' in window)||Notification.permission!=='granted')return;
+  let last='';try{last=localStorage.getItem('delta_notified')||''}catch(e){}if(last===today())return;
+  const ex=expiringContracts();if(!ex.length)return;
+  const body=ex.slice(0,5).map(c=>`${clName(c.clientId)} (${c.no}) — باقي ${daysLeft(c)} يوم`).join('\n')+(ex.length>5?`\n+ ${ex.length-5} أخرى`:'');
+  const title=`⏰ ${ex.length} عقد ينتهي خلال ${EXPIRY_DAYS} يوم`,opt={body,icon:'icon-192.png',badge:'icon-192.png',tag:'delta-expiry',dir:'rtl',lang:'ar'};
+  try{const reg=await navigator.serviceWorker?.getRegistration();if(reg)await reg.showNotification(title,opt);else new Notification(title,opt)}catch(e){try{new Notification(title,opt)}catch(_){}}
+  try{localStorage.setItem('delta_notified',today())}catch(e){}
+}
+
 /* ===================== Sign-in gate & Firebase ===================== */
 function gate(html){
   let g=$('#gate');if(!g){g=document.createElement('div');g.id='gate';document.body.appendChild(g)}
@@ -1107,7 +1124,7 @@ async function startCloud(){
     gate(`<p class="muted">جاري تحميل البيانات...</p>`);
     const cols=role==='manager'?['clients','techs','contracts','visits','jobs','logs','invoices','users']:['clients','techs','visits','jobs','logs'];
     const loaded=new Set(),need=cols.length+1;
-    const mark=k=>{if(loaded.has(k))return scheduleRender();loaded.add(k);if(loaded.size===need){gate(null);render()}};
+    const mark=k=>{if(loaded.has(k))return scheduleRender();loaded.add(k);if(loaded.size===need){gate(null);render();setTimeout(checkExpiryNotify,1500)}};
     cols.forEach(k=>unsubs.push(FS.onSnapshot(FS.collection(fdb,k),snap=>{db[k]=snap.docs.map(d=>k==='users'?{email:d.id,...d.data()}:d.data());mark(k)},e=>{console.error(k,e);mark(k)})));
     unsubs.push(FS.onSnapshot(FS.doc(fdb,'meta','settings'),s=>{db.settings={...blank().settings,...(s.exists()?s.data():{})};fixName();mark('settings')},e=>{console.error(e);mark('settings')}));
   });

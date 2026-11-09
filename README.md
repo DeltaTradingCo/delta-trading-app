@@ -79,6 +79,15 @@
 
 التحديثات بتوصل تلقائياً، مش محتاج تعيد التثبيت.
 
+## تنبيه انتهاء العقود بالبريد ⏰ (اختياري — مرة واحدة)
+سكريبت مجاني يشتغل كل يوم الساعة 9 صباحاً على حساب الشركة، ويبعت إيميل لـ deltatradingco.eg@gmail.com لما يفضل على انتهاء أي عقد **60 يوم**، وتذكير عند **30** و **7** أيام.
+1. ادخل [script.google.com](https://script.google.com) بحساب الشركة ← **New project** ← سمّيه `Delta contract alerts`
+2. امسح الكود الموجود والصق محتوى ملف `contract-alerts.gs`
+3. ⚙️ **Project Settings** ← فعّل **Show "appsscript.json" manifest file in editor**
+4. ارجع للـ Editor ← افتح `appsscript.json` ← امسح محتواه والصق محتوى ملف `appsscript.json` ← 💾 Save
+5. من القائمة فوق اختر الدالة **setupDailyTrigger** ← **Run** ← **Review permissions** ← اختر حساب الشركة ← **Advanced** ← **Go to Delta contract alerts** ← **Allow**
+6. خلاص — هيشتغل يومياً لوحده. (لو فيه عقد باقي عليه 60 يوم أو أقل، هيوصلك إيميل فوراً.)
+
 ---
 
 ### ملاحظات

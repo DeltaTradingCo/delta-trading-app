@@ -1,5 +1,5 @@
 // Delta Trading Co. — offline support. Bump VERSION when releasing an update.
-const VERSION = 'delta-v10';
+const VERSION = 'delta-v11';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
@@ -18,4 +18,13 @@ self.addEventListener('fetch', e => {
       return r;
     }).catch(() => caches.match(e.request).then(r => r || caches.match('./index.html')))
   );
+});
+// open the app (contracts) when a notification is tapped
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cs => {
+    const c = cs.find(x => 'focus' in x);
+    if (c) { c.navigate('./#/contracts'); return c.focus(); }
+    return self.clients.openWindow('./#/contracts');
+  }));
 });
