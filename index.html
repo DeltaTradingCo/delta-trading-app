@@ -703,6 +703,8 @@ function listView({key,title,add,cols,filters=[],rows,search,head='',summary=nul
 }
 const monthOpts=()=>{const s=new Set([...db.visits.map(v=>v.date?.slice(0,7)),today().slice(0,7)]);return[...s].filter(Boolean).sort().reverse().map(m=>[m,m.split('-').reverse().join('/')])};
 const techOpts=()=>db.techs.map(t=>[t.id,t.name]);
+const clientOpts=()=>[...db.clients].sort((a,b)=>(a.seq||0)-(b.seq||0)).map(c=>[c.id,`${c.ref} — ${c.name}`]);
+const clientFilter=()=>({k:'client',l:'العميل',opts:clientOpts(),test:(x,v)=>x.clientId===v});
 
 function viewClients(){
   listView({key:'clients',title:'العملاء',add:'عميل جديد',
@@ -744,7 +746,7 @@ function viewInvoices(){
    rows:()=>[...db.invoices].sort((a,b)=>(b.date||'').localeCompare(a.date||'')),
    search:r=>[r.invNo,r.description,r.notes,clName(r.clientId),r.method].join(' '),
    filters:[{k:'pay',l:'الدفع',opts:['غير مدفوعة','مدفوعة جزئياً','مدفوعة',['due','كل غير المسدد']],test:(r,v)=>v==='due'?invDue(r)>0:r.payStatus===v},
-    {k:'client',l:'العميل',opts:db.clients.map(c=>[c.id,c.name]),test:(r,v)=>r.clientId===v},
+    clientFilter(),
     {k:'month',l:'الشهر',opts:months,test:(r,v)=>(r.date||'').startsWith(v)}],
    cols:COLS.invoices(true),summary:invSummary});
 }
@@ -752,7 +754,7 @@ function viewContracts(){
   listView({key:'contracts',title:'العقود',add:'عقد جديد',
    rows:()=>[...db.contracts].sort((a,b)=>(a.end||'').localeCompare(b.end||'')),
    search:c=>[c.no,c.title,c.kind,clName(c.clientId),c.units,c.notes].join(' '),
-   filters:[{k:'status',l:'الحالة',opts:['ساري','لم يبدأ','منتهي','معلق','ملغي'],test:(c,v)=>contractStatus(c)===v},
+   filters:[clientFilter(),{k:'status',l:'الحالة',opts:['ساري','لم يبدأ','منتهي','معلق','ملغي'],test:(c,v)=>contractStatus(c)===v},
     {k:'kind',l:'النوع',opts:CONTRACT_KINDS,test:(c,v)=>c.kind===v},
     {k:'att',l:'الملف',opts:[['y','مرفوع'],['n','بدون ملف']],test:(c,v)=>v==='y'?!!c.attachment:!c.attachment},
     {k:'exp',l:'الانتهاء',opts:[['30','ينتهي خلال 30 يوم'],['60','ينتهي خلال 60 يوم']],test:(c,v)=>contractStatus(c)==='ساري'&&c.end<=addDays(today(),+v)}],
@@ -762,7 +764,7 @@ function viewVisits(){
   listView({key:'visits',title:'زيارات الصيانة',add:'زيارة جديدة',
    rows:()=>[...db.visits].sort((a,b)=>a.date.localeCompare(b.date)),
    search:v=>[v.no,clName(v.clientId),tech(v.techId)?.name,v.type,v.work,v.notes].join(' '),
-   filters:[{k:'status',l:'الحالة',opts:['مجدولة','متأخرة','تمت','مؤجلة','ملغاة'],test:(v,s)=>visitStatus(v)===s||(s==='مجدولة'&&v.status==='مجدولة')},
+   filters:[clientFilter(),{k:'status',l:'الحالة',opts:['مجدولة','متأخرة','تمت','مؤجلة','ملغاة'],test:(v,s)=>visitStatus(v)===s||(s==='مجدولة'&&v.status==='مجدولة')},
     {k:'month',l:'الشهر',opts:monthOpts(),test:(v,m)=>v.date.startsWith(m)},
     {k:'tech',l:'الفني',opts:techOpts(),test:(v,t)=>v.techId===t},
     {k:'type',l:'النوع',opts:['دورية','طارئة / عطل','معاينة','تركيب','متابعة'],test:(v,t)=>v.type===t}],
@@ -772,7 +774,7 @@ function viewJobs(){
   listView({key:'jobs',title:'الأعمال الجارية والجديدة',add:'عمل جديد',
    rows:()=>[...db.jobs].sort((a,b)=>{const o={'عاجلة':0,'مهمة':1,'عادية':2};const s={'جاري التنفيذ':0,'جديد':1,'معلق':2,'مكتمل':3,'ملغي':4};return(s[a.status]-s[b.status])||(o[a.priority]-o[b.priority])||(a.due||'9').localeCompare(b.due||'9')}),
    search:j=>[j.no,j.orderNo,j.title,j.kind,j.details,j.notes,clName(j.clientId),tech(j.techId)?.name].join(' '),
-   filters:[{k:'status',l:'الحالة',opts:[['open','المفتوحة (جديد + جاري + معلق)'],'جديد','جاري التنفيذ','معلق','مكتمل','ملغي'],test:(j,v)=>v==='open'?['جديد','جاري التنفيذ','معلق'].includes(j.status):j.status===v},
+   filters:[clientFilter(),{k:'status',l:'الحالة',opts:[['open','المفتوحة (جديد + جاري + معلق)'],'جديد','جاري التنفيذ','معلق','مكتمل','ملغي'],test:(j,v)=>v==='open'?['جديد','جاري التنفيذ','معلق'].includes(j.status):j.status===v},
     {k:'tech',l:'الفني',opts:techOpts(),test:(j,t)=>j.techId===t},
     {k:'kind',l:'النوع',opts:ENT.jobs.fields.find(f=>f.k==='kind').opts,test:(j,v)=>j.kind===v}],
    cols:COLS.jobs(true)});
@@ -781,7 +783,7 @@ function viewLogs(){
   listView({key:'logs',title:'سجل الأعمال اليومية',add:'تسجيل عمل',
    rows:()=>[...db.logs].sort((a,b)=>b.date.localeCompare(a.date)),
    search:l=>[l.work,l.notes,clName(l.clientId),tech(l.techId)?.name].join(' '),
-   filters:[{k:'tech',l:'الفني',opts:techOpts(),test:(l,t)=>l.techId===t},
+   filters:[clientFilter(),{k:'tech',l:'الفني',opts:techOpts(),test:(l,t)=>l.techId===t},
     {k:'month',l:'الشهر',opts:[...new Set([...db.logs.map(l=>l.date.slice(0,7)),today().slice(0,7)])].sort().reverse().map(m=>[m,m.split('-').reverse().join('/')]),test:(l,m)=>l.date.startsWith(m)}],
    cols:COLS.logs(true)});
 }
