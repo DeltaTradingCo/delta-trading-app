@@ -258,7 +258,7 @@ const TECH_ADD=['clients','jobs','logs'];
 const techOwns=x=>x.techId===ME.techId||x.createdBy===ME.email;
 const TECH_HIDE={jobs:['value']};
 const blank=()=>({settings:{company:'Delta Trading Co.',companyEn:'Delta Trading Co.',email:'deltatradingco.eg@gmail.com',phone:'',address:'',prefix:'CH',startSeq:1,prefixL:'CL',startSeqL:1,lastBackup:''},
-  clients:[],techs:[],contracts:[],visits:[],jobs:[],logs:[],invoices:[]});
+  clients:[],techs:[],contracts:[],visits:[],jobs:[],logs:[],invoices:[],jobPrices:[]});
 let db;
 function load(){try{const s=localStorage.getItem(KEY);db=s?JSON.parse(s):blank()}catch(e){db=blank()}
   const b=blank();for(const k in b){if(!(k in db))db[k]=b[k]}db.settings={...b.settings,...db.settings};fixName()}
@@ -305,6 +305,7 @@ const oblOn=r=>Object.keys(OBL).filter(k=>r.oblig&&r.oblig[k]&&r.oblig[k].req);
 const oblUnpaid=r=>oblOn(r).filter(k=>(r.oblig[k].status||'لم تُدفع')==='لم تُدفع');
 const oblUnsub=r=>oblOn(r).filter(k=>r.oblig[k].status!=='تم التسليم للعميل');
 const oblUnpaidAmt=r=>oblUnpaid(r).reduce((a,k)=>a+(Number(r.oblig[k].amount)||0),0);
+const jobValue=j=>{const p=(db.jobPrices||[]).find(x=>x.id===j.id);return p?p.value:(j.value??'')};
 const invDue=r=>(Number(r.amount)||0)-invPaid(r);
 const badge=s=>s?`<span class="badge ${BADGE[s]||''}">${esc(s)}</span>`:'';
 
@@ -461,6 +462,7 @@ function openForm(key,id,defaults={}){
   if(isTech()&&(id?!TECH_EDIT[key]:!TECH_ADD.includes(key)))return toast('ليس لديك صلاحية');
   if(['contracts','visits','jobs'].includes(key)&&!db.clients.length){toast('أضف عميلاً أولاً');return openForm('clients')}
   const obj={...(cur||E.defaults()),...defaults};
+  if(key==='jobs'&&cur&&!isTech())obj.value=jobValue(cur);
   formCtx={key,id};
   $('#mTitle').textContent=(id?'تعديل ':'إضافة ')+E.one;
   let ref='';
@@ -589,6 +591,8 @@ function submitForm(){
     if(LETTER[key]&&'clientId' in data&&obj.clientId!==data.clientId)Object.assign(obj,childNo(key,data.clientId));
     Object.assign(obj,data,stamp);
   }
+  if(key==='jobs'){const hasV='value' in data,v=data.value;if(!isTech())delete obj.value;
+    if(hasV&&!isTech()){db.jobPrices=db.jobPrices||[];const i=db.jobPrices.findIndex(x=>x.id===obj.id),rec={id:obj.id,value:v};if(i>=0)db.jobPrices[i]=rec;else db.jobPrices.push(rec);put('jobPrices',rec)}}
   put(key,obj);
   if(upFile){toast('جاري رفع ملف العقد...');const fid=uid(),old=obj.attachment;
     Files.put(fid,upFile).then(()=>{obj.attachment={id:fid,name:upFile.name,type:upFile.type||'application/pdf',size:upFile.size,uploadedAt:new Date().toISOString()};put(key,obj);if(old&&old.id)Files.del(old.id);toast('تم رفع ملف العقد ✅');render()}).catch(e=>{console.error(e);toast('تعذّر رفع الملف')});
@@ -621,6 +625,7 @@ function del(key,id){
     db.visits=db.visits.filter(v=>!(v.contractId===id&&v.status==='مجدولة'));db.visits.forEach(v=>{if(v.contractId===id){v.contractId='';put('visits',v)}});}
   else if(!confirm('تأكيد الحذف؟'))return;
   if(key==='jobs'||key==='visits')(o.attachments||[]).forEach(a=>Files.del(a.id));
+  if(key==='jobs'&&(db.jobPrices||[]).some(x=>x.id===id)){db.jobPrices=db.jobPrices.filter(x=>x.id!==id);drop('jobPrices',id)}
   if(key==='invoices'){(o.attachments||[]).forEach(a=>Files.del(a.id));oblOn(o).forEach(k=>(o.oblig[k].files||[]).forEach(a=>Files.del(a.id)))}
   db[key]=db[key].filter(x=>x.id!==id);
   if(key==='techs'){['visits','jobs','logs'].forEach(k=>db[k].forEach(x=>{if(x.techId===id){x.techId='';put(k,x)}}));if(MODE==='cloud'&&o.email)Cloud.delUser(o.email)}
@@ -1013,10 +1018,11 @@ async function mergeImport(d,b){
   }
   for(const k of ['contracts','visits','jobs']){for(const o of d[k]){const c=cl(o.clientId);
     if(c&&(remap[o.clientId]||!o.no)){if(!o.n)o.n=childNo(k,o.clientId).n;o.no=`${c.ref}/${LETTER[k]}${o.n}`}upsert(k,o)}}
-  for(const k of ['techs','logs','invoices'])(d[k]||[]).forEach(o=>upsert(k,o));
+  for(const j of d.jobs||[])if('value' in j){(d.jobPrices=d.jobPrices||[]).push({id:j.id,value:j.value});delete j.value;const x=byId('jobs',j.id);if(x)delete x.value}
+  for(const k of ['techs','logs','invoices','jobPrices'])(d[k]||[]).forEach(o=>upsert(k,o));
   if(fresh&&d.settings)db.settings={...b.settings,...d.settings};
   for(const fl of d.files||[])await Files.put(fl.id,b64ToBlob(fl.data,fl.type),fl.kind||'contract');
-  if(MODE==='cloud'){await Cloud.bulk(['clients','techs','contracts','visits','jobs','logs','invoices'].flatMap(k=>(d[k]||[]).map(o=>[k,byId(k,o.id)])));
+  if(MODE==='cloud'){await Cloud.bulk(['clients','techs','contracts','visits','jobs','logs','invoices','jobPrices'].flatMap(k=>(d[k]||[]).map(o=>[k,byId(k,o.id)])));
     d.techs.filter(t=>t.email).forEach(t=>Cloud.setUser(t.email,{email:t.email,role:'tech',techId:t.id,name:t.name}));if(fresh)putSettings()}
   else save();
   toast('تم الاستيراد بنجاح ✅');render();
@@ -1027,11 +1033,11 @@ function exportCSV(key){
    techs:[['name','الاسم'],['phone','الموبايل'],['specialty','التخصص'],['status','الحالة']],
    contracts:[['no','رقم العقد'],['_client','العميل'],['title','الموضوع'],['start','البداية'],['end','النهاية'],['_freq','الدورية'],['value','القيمة'],['_status','الحالة'],['units','الأجهزة'],['notes','ملاحظات']],
    visits:[['no','رقم الزيارة'],['date','التاريخ'],['_client','العميل'],['type','النوع'],['_tech','الفني'],['_vstatus','الحالة'],['work','الأعمال المنفذة'],['parts','قطع الغيار'],['notes','ملاحظات']],
-   jobs:[['no','رقم العمل'],['_client','العميل'],['title','العمل'],['kind','النوع'],['_tech','الفني'],['status','الحالة'],['priority','الأولوية'],['start','البدء'],['due','التسليم'],['progress','الإنجاز %'],['value','القيمة'],['details','التفاصيل']],
+   jobs:[['no','رقم العمل'],['_client','العميل'],['title','العمل'],['kind','النوع'],['_tech','الفني'],['status','الحالة'],['priority','الأولوية'],['start','البدء'],['due','التسليم'],['progress','الإنجاز %'],['_jval','القيمة'],['details','التفاصيل']],
    invoices:[['invNo','رقم الفاتورة'],['date','التاريخ'],['_client','العميل'],['description','البيان'],['amount','المبلغ'],['payStatus','حالة الدفع'],['_paid','المدفوع'],['_due','المتبقي'],['paidDate','تاريخ الدفع'],['method','طريقة الدفع'],['_mp','قوى عاملة'],['_mpS','حالة القوى العاملة'],['_ins','تأمينات مقاولات'],['_insS','حالة التأمينات'],['notes','ملاحظات']],
    logs:[['date','التاريخ'],['_tech','الفني'],['_client','العميل'],['work','العمل المنفذ'],['hours','الساعات'],['status','الحالة'],['notes','ملاحظات']]}[key];
   const ob=(r,k,f)=>r.oblig&&r.oblig[k]&&r.oblig[k].req?(f==='s'?r.oblig[k].status||'لم تُدفع':r.oblig[k].amount):'';
-  const val=(r,k)=>k==='_mp'?ob(r,'manpower'):k==='_mpS'?ob(r,'manpower','s'):k==='_ins'?ob(r,'insurance'):k==='_insS'?ob(r,'insurance','s'):k==='_div'?DIVS[clDiv(r)].short:k==='_paid'?invPaid(r):k==='_due'?invDue(r):k==='_client'?clName(r.clientId):k==='_tech'?(tech(r.techId)?.name||''):k==='_freq'?freqName(r.frequency):k==='_status'?contractStatus(r):k==='_vstatus'?visitStatus(r):r[k];
+  const val=(r,k)=>k==='_jval'?jobValue(r):k==='_mp'?ob(r,'manpower'):k==='_mpS'?ob(r,'manpower','s'):k==='_ins'?ob(r,'insurance'):k==='_insS'?ob(r,'insurance','s'):k==='_div'?DIVS[clDiv(r)].short:k==='_paid'?invPaid(r):k==='_due'?invDue(r):k==='_client'?clName(r.clientId):k==='_tech'?(tech(r.techId)?.name||''):k==='_freq'?freqName(r.frequency):k==='_status'?contractStatus(r):k==='_vstatus'?visitStatus(r):r[k];
   const q=x=>`"${String(x??'').replace(/"/g,'""')}"`;
   const csv='﻿'+[map.map(m=>q(m[1])).join(','),...db[key].map(r=>map.map(m=>q(val(r,m[0]))).join(','))].join('\r\n');
   download(`delta-${key}-${today()}.csv`,csv,'text/csv;charset=utf-8');
@@ -1146,6 +1152,10 @@ function syncBanner(){
   if(pend)h+=`<div class="alert no-print"><span>⏳ ${pend} تغيير لم يُرفع للسحابة بعد — تأكد من الاتصال بالإنترنت، وسيتم الرفع تلقائياً.</span></div>`;
   return h;
 }
+function migrateJobValues(){
+  const old=db.jobs.filter(j=>'value' in j);if(!old.length)return;
+  old.forEach(j=>{const v=j.value;delete j.value;if(v!==''&&v!=null&&!(db.jobPrices||[]).some(x=>x.id===j.id)){const rec={id:j.id,value:v};db.jobPrices.push(rec);put('jobPrices',rec)}put('jobs',j)});
+}
 let _rt;function scheduleRender(){clearTimeout(_rt);_rt=setTimeout(render,120)}
 
 async function startCloud(){
@@ -1189,9 +1199,9 @@ async function startCloud(){
     if(!role||(role==='tech'&&!techId)){showDenied(email);return}
     ME={email,role,techId,name:u.displayName,photo:u.photoURL};
     gate(`<p class="muted">جاري تحميل البيانات...</p>`);
-    const cols=role==='manager'?['clients','techs','contracts','visits','jobs','logs','invoices','users']:['clients','techs','visits','jobs','logs'];
+    const cols=role==='manager'?['clients','techs','contracts','visits','jobs','logs','invoices','jobPrices','users']:['clients','techs','visits','jobs','logs'];
     const loaded=new Set(),need=cols.length+1;
-    const mark=k=>{if(loaded.has(k))return scheduleRender();loaded.add(k);if(loaded.size===need){gate(null);render();setTimeout(checkExpiryNotify,1500)}};
+    const mark=k=>{if(loaded.has(k))return scheduleRender();loaded.add(k);if(loaded.size===need){gate(null);if(role==='manager')migrateJobValues();render();setTimeout(checkExpiryNotify,1500)}};
     cols.forEach(k=>unsubs.push(FS.onSnapshot(FS.collection(fdb,k),{includeMetadataChanges:true},snap=>{db[k]=snap.docs.map(d=>k==='users'?{email:d.id,...d.data()}:d.data());const pn=snap.docs.filter(d=>d.metadata.hasPendingWrites).length;if(pn!==(SYNC.pending[k]||0)){SYNC.pending[k]=pn;if(loaded.has(k))scheduleRender()}mark(k)},e=>{console.error(k,e);mark(k)})));
     unsubs.push(FS.onSnapshot(FS.doc(fdb,'meta','settings'),s=>{db.settings={...blank().settings,...(s.exists()?s.data():{})};fixName();mark('settings')},e=>{console.error(e);mark('settings')}));
   });
