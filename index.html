@@ -672,7 +672,8 @@ function table(rows,cols,emptyMsg='لا توجد بيانات بعد',tid=''){
   if(!rows.length)return`<div class="table-wrap"><div class="empty">${emptyMsg}</div></div>`;
   rows=sortRows(rows,cols,tid);const st=tid&&ui.sort[tid];
   const w=i=>{const v=tid&&ui.colw[tid+':'+i];return v?` style="width:${v}px;min-width:${v}px;max-width:${v}px"`:''},rz=i=>tid&&i>0?`<span class="rz" title="اسحب لتغيير العرض — دبل كليك للإرجاع" onpointerdown="startRz(event,'${tid}',${i})" ondblclick="resetRz(event,'${tid}',${i})" onclick="event.stopPropagation()"></span>`:'';
-  return`<div class="table-wrap"><table${tid?` data-tid="${tid}"`:''}><thead><tr>${cols.map((c,i)=>c.h&&tid?`<th class="sortable"${w(i)} onclick="sortBy('${tid}',${i})" title="ترتيب حسب ${esc(c.h)}">${c.h} <span class="arr">${st&&st.i===i?(st.d>0?'▲':'▼'):'⇅'}</span>${rz(i)}</th>`:`<th${w(i)}>${c.h}${rz(i)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map((c,i)=>`<td class="${c.cls||''}${tid&&ui.colw[tid+':'+i]?' wrap':''}" data-label="${esc(c.h)}">${c.v(r)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  const fixed=tid&&Object.keys(ui.colw).some(k=>k.startsWith(tid+':'));
+  return`<div class="table-wrap"><table${tid?` data-tid="${tid}"`:''}${fixed?' style="table-layout:fixed"':''}><thead><tr>${cols.map((c,i)=>c.h&&tid?`<th class="sortable"${w(i)} onclick="sortBy('${tid}',${i})" title="ترتيب حسب ${esc(c.h)}">${c.h} <span class="arr">${st&&st.i===i?(st.d>0?'▲':'▼'):'⇅'}</span>${rz(i)}</th>`:`<th${w(i)}>${c.h}${rz(i)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map((c,i)=>`<td class="${c.cls||''}${tid&&ui.colw[tid+':'+i]?' wrap':''}" data-label="${esc(c.h)}">${c.v(r)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 const act=(key,id,extra='')=>isTech()
   ?`<div class="btns no-print">${extra}${TECH_EDIT[key]?`<button class="btn sm" onclick="openForm('${key}','${id}')">${key==='clients'?'تعديل':'تحديث'}</button>`:''}</div>`
@@ -729,12 +730,16 @@ try{ui.colw=JSON.parse(localStorage.getItem('delta_colw')||'{}')||{}}catch(e){}
 function applyColW(tid,i,v){document.querySelectorAll(`table[data-tid="${tid}"]`).forEach(t=>{const th=t.tHead&&t.tHead.rows[0].cells[i];if(th){const css=v?v+'px':'';th.style.width=css;th.style.minWidth=css;th.style.maxWidth=css}[...t.tBodies[0].rows].forEach(r=>{const td=r.cells[i];if(td)td.classList.toggle('wrap',!!v)})})}
 function startRz(e,tid,i){
   e.preventDefault();e.stopPropagation();const th=e.target.parentElement,x0=e.clientX,w0=th.getBoundingClientRect().width;ui.rzBusy=true;document.body.classList.add('resizing');
+  const tbl=th.closest('table'),cells=[...th.parentElement.cells];
+  cells.forEach((c,j)=>{if(j<cells.length-1&&!ui.colw[tid+':'+j])ui.colw[tid+':'+j]=Math.round(c.getBoundingClientRect().width)});
+  cells.forEach((c,j)=>{if(j<cells.length-1)applyColW(tid,j,ui.colw[tid+':'+j])});
+  document.querySelectorAll(`table[data-tid="${tid}"]`).forEach(t=>t.style.tableLayout='fixed');
   const mv=ev=>{const v=Math.max(50,Math.round(w0+(ev.clientX-x0)));ui.colw[tid+':'+i]=v;applyColW(tid,i,v)};
   const up=()=>{document.removeEventListener('pointermove',mv);document.removeEventListener('pointerup',up);document.body.classList.remove('resizing');
     try{localStorage.setItem('delta_colw',JSON.stringify(ui.colw))}catch(_){}setTimeout(()=>ui.rzBusy=false,150)};
   document.addEventListener('pointermove',mv);document.addEventListener('pointerup',up);
 }
-function resetRz(e,tid,i){e.preventDefault();e.stopPropagation();delete ui.colw[tid+':'+i];applyColW(tid,i,0);try{localStorage.setItem('delta_colw',JSON.stringify(ui.colw))}catch(_){}}
+function resetRz(e,tid,i){e.preventDefault();e.stopPropagation();Object.keys(ui.colw).filter(k=>k.startsWith(tid+':')).forEach(k=>{applyColW(tid,+k.split(':')[1],0);delete ui.colw[k]});document.querySelectorAll(`table[data-tid="${tid}"]`).forEach(t=>t.style.tableLayout='');try{localStorage.setItem('delta_colw',JSON.stringify(ui.colw))}catch(_){}}
 /* side menu width */
 function applySideW(){let v=0;try{v=+localStorage.getItem('delta_sidew')||0}catch(e){}const sd=document.querySelector('.side');if(sd&&matchMedia('(min-width:901px)').matches)sd.style.width=v?v+'px':''}
 function startSideRz(e){e.preventDefault();const sd=document.querySelector('.side'),x0=e.clientX,w0=sd.getBoundingClientRect().width;document.body.classList.add('resizing');
