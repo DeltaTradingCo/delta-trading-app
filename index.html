@@ -132,6 +132,22 @@ th{background:#f7f8fb;color:var(--muted);font-size:13px;font-weight:700;white-sp
 tr:last-child td{border-bottom:0}
 tbody tr:hover{background:#fafbfd}
 td.nowrap{white-space:nowrap}
+th{position:relative}
+th .rz{position:absolute;top:0;left:-3px;width:8px;height:100%;cursor:col-resize;z-index:2}
+th .rz::after{content:'';position:absolute;top:25%;left:3px;height:50%;border-left:2px solid #d5dae4}
+th:hover .rz::after,th .rz:hover::after{border-color:var(--green)}
+body.resizing,body.resizing *{cursor:col-resize!important;user-select:none!important}
+td{overflow-wrap:anywhere}
+@media (min-width:901px){
+ td.wrap,td.wrap *{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
+ td.wrap .btns{flex-wrap:wrap}
+ td.wrap .btn{white-space:normal!important;text-align:center}
+ td.wrap .prog{width:100%;max-width:90px}
+ th{white-space:normal}
+}
+.side-rz{position:absolute;top:0;left:-4px;width:8px;height:100%;cursor:col-resize;z-index:25}
+.side-rz:hover{background:rgba(107,171,32,.35)}
+@media (max-width:900px){.side-rz{display:none}}
 th.sortable{cursor:pointer;user-select:none}th.sortable:hover{color:var(--navy);background:#eef1f6}th .arr{color:#b3bacb;font-size:11px}th.sortable:hover .arr{color:var(--green)}
 .ref{font-family:Consolas,monospace;direction:ltr;unicode-bidi:embed;font-weight:700;color:var(--navy);white-space:nowrap}
 .muted{color:var(--muted)}
@@ -212,6 +228,7 @@ th.sortable{cursor:pointer;user-select:none}th.sortable:hover{color:var(--navy);
     <div class="divsw top-sw" id="divTop"></div>
     <nav class="nav" id="nav"></nav>
     <div class="side-foot" id="sideFoot"></div>
+    <div class="side-rz no-print" title="اسحب لتغيير عرض القائمة — دبل كليك للإرجاع" onpointerdown="startSideRz(event)" ondblclick="resetSideW()"></div>
   </aside>
   <main class="main" id="main"></main>
 </div>
@@ -649,12 +666,13 @@ function sortRows(rows,cols,tid){
   return rows.map(r=>[key(r),r]).sort((a,b)=>{const x=a[0],y=b[0];const ex=x===''||x==null,ey=y===''||y==null;if(ex||ey)return ex-ey;
     return st.d*((typeof x==='number'&&typeof y==='number')?x-y:collator.compare(String(x),String(y)))}).map(p=>p[1]);
 }
-function sortBy(tid,i,dir){const st=ui.sort[tid];ui.sort[tid]=i===''?null:{i:+i,d:dir||(st&&st.i===+i?-st.d:1)};if(!ui.sort[tid])delete ui.sort[tid];
+function sortBy(tid,i,dir){if(ui.rzBusy)return;const st=ui.sort[tid];ui.sort[tid]=i===''?null:{i:+i,d:dir||(st&&st.i===+i?-st.d:1)};if(!ui.sort[tid])delete ui.sort[tid];
   try{localStorage.setItem('delta_sort',JSON.stringify(ui.sort))}catch(e){}ui.refresh&&ui.refresh.tid===tid?ui.refresh():render()}
 function table(rows,cols,emptyMsg='لا توجد بيانات بعد',tid=''){
   if(!rows.length)return`<div class="table-wrap"><div class="empty">${emptyMsg}</div></div>`;
   rows=sortRows(rows,cols,tid);const st=tid&&ui.sort[tid];
-  return`<div class="table-wrap"><table><thead><tr>${cols.map((c,i)=>c.h&&tid?`<th class="sortable" onclick="sortBy('${tid}',${i})" title="ترتيب حسب ${esc(c.h)}">${c.h} <span class="arr">${st&&st.i===i?(st.d>0?'▲':'▼'):'⇅'}</span></th>`:`<th>${c.h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td class="${c.cls||''}" data-label="${esc(c.h)}">${c.v(r)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  const w=i=>{const v=tid&&ui.colw[tid+':'+i];return v?` style="width:${v}px;min-width:${v}px;max-width:${v}px"`:''},rz=i=>tid?`<span class="rz" title="اسحب لتغيير العرض — دبل كليك للإرجاع" onpointerdown="startRz(event,'${tid}',${i})" ondblclick="resetRz(event,'${tid}',${i})" onclick="event.stopPropagation()"></span>`:'';
+  return`<div class="table-wrap"><table${tid?` data-tid="${tid}"`:''}><thead><tr>${cols.map((c,i)=>c.h&&tid?`<th class="sortable"${w(i)} onclick="sortBy('${tid}',${i})" title="ترتيب حسب ${esc(c.h)}">${c.h} <span class="arr">${st&&st.i===i?(st.d>0?'▲':'▼'):'⇅'}</span>${rz(i)}</th>`:`<th${w(i)}>${c.h}${rz(i)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map((c,i)=>`<td class="${c.cls||''}${tid&&ui.colw[tid+':'+i]?' wrap':''}" data-label="${esc(c.h)}">${c.v(r)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 const act=(key,id,extra='')=>isTech()
   ?`<div class="btns no-print">${extra}${TECH_EDIT[key]?`<button class="btn sm" onclick="openForm('${key}','${id}')">${key==='clients'?'تعديل':'تحديث'}</button>`:''}</div>`
@@ -706,7 +724,25 @@ const COLS={
 };
 
 /* ===================== Views ===================== */
-const ui={sort:{}};
+const ui={sort:{},colw:{}};
+try{ui.colw=JSON.parse(localStorage.getItem('delta_colw')||'{}')||{}}catch(e){}
+function applyColW(tid,i,v){document.querySelectorAll(`table[data-tid="${tid}"]`).forEach(t=>{const th=t.tHead&&t.tHead.rows[0].cells[i];if(th){const css=v?v+'px':'';th.style.width=css;th.style.minWidth=css;th.style.maxWidth=css}[...t.tBodies[0].rows].forEach(r=>{const td=r.cells[i];if(td)td.classList.toggle('wrap',!!v)})})}
+function startRz(e,tid,i){
+  e.preventDefault();e.stopPropagation();const th=e.target.parentElement,x0=e.clientX,w0=th.getBoundingClientRect().width;ui.rzBusy=true;document.body.classList.add('resizing');
+  const mv=ev=>{const v=Math.max(50,Math.round(w0+(x0-ev.clientX)));ui.colw[tid+':'+i]=v;applyColW(tid,i,v)};
+  const up=()=>{document.removeEventListener('pointermove',mv);document.removeEventListener('pointerup',up);document.body.classList.remove('resizing');
+    try{localStorage.setItem('delta_colw',JSON.stringify(ui.colw))}catch(_){}setTimeout(()=>ui.rzBusy=false,150)};
+  document.addEventListener('pointermove',mv);document.addEventListener('pointerup',up);
+}
+function resetRz(e,tid,i){e.preventDefault();e.stopPropagation();delete ui.colw[tid+':'+i];applyColW(tid,i,0);try{localStorage.setItem('delta_colw',JSON.stringify(ui.colw))}catch(_){}}
+/* side menu width */
+function applySideW(){let v=0;try{v=+localStorage.getItem('delta_sidew')||0}catch(e){}const sd=document.querySelector('.side');if(sd&&matchMedia('(min-width:901px)').matches)sd.style.width=v?v+'px':''}
+function startSideRz(e){e.preventDefault();const sd=document.querySelector('.side'),x0=e.clientX,w0=sd.getBoundingClientRect().width;document.body.classList.add('resizing');
+  const mv=ev=>{const v=Math.min(420,Math.max(170,Math.round(w0+(x0-ev.clientX))));sd.style.width=v+'px';try{localStorage.setItem('delta_sidew',v)}catch(_){}};
+  const up=()=>{document.removeEventListener('pointermove',mv);document.removeEventListener('pointerup',up);document.body.classList.remove('resizing')};
+  document.addEventListener('pointermove',mv);document.addEventListener('pointerup',up)}
+function resetSideW(){try{localStorage.removeItem('delta_sidew')}catch(_){}applySideW()}
+window.addEventListener('resize',applySideW);
 try{ui.sort=JSON.parse(localStorage.getItem('delta_sort')||'{}')||{}}catch(e){ui.sort={}}
 const NAV=[['dashboard','🏠','الرئيسية'],['daily','📋','المتابعة اليومية'],['clients','👥','العملاء'],['contracts','📄','العقود'],['invoices','🧾','الفواتير'],
  ['visits','🔧','زيارات الصيانة'],['jobs','🏗️','الأعمال الجارية والجديدة'],['logs','📝','سجل الأعمال اليومية'],['techs','👷','الفنيين'],['settings','⚙️','الإعدادات والنسخ']];
@@ -1057,6 +1093,7 @@ function render(){
   }finally{db=FULL;FULL=null}
 }
 window.addEventListener('hashchange',()=>{render();window.scrollTo(0,0)});
+applySideW();
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
 
 /* ===================== Attached files (contracts) ===================== */
