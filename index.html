@@ -437,8 +437,8 @@ function optsHtml(f,val,clientId){
   let o=[];
   if(f.t==='client')o=[...db.clients].filter(c=>!ui0.div||clDiv(c)===ui0.div||c.id===val).sort((a,b)=>clDiv(a).localeCompare(clDiv(b))||(a.seq||0)-(b.seq||0)).map(c=>[c.id,`${c.ref} — ${c.name}`]);
   else if(f.t==='tech')o=db.techs.filter(t=>t.status!=='غير نشط'||t.id===val).map(t=>[t.id,t.name]);
-  else if(f.t==='contract')o=db.contracts.filter(c=>!clientId||c.clientId===clientId).map(c=>[c.id,`${c.no} — ${c.title}`]);
-  else if(f.t==='job')o=db.jobs.filter(j=>(!clientId||j.clientId===clientId)&&(!['مكتمل','ملغي'].includes(j.status)||j.id===val)).map(j=>[j.id,`${j.no} — ${j.title}`]);
+  else if(f.t==='contract')o=db.contracts.filter(c=>!clientId||c.clientId===clientId).sort((a,b)=>(a.no||'').localeCompare(b.no||'',undefined,{numeric:true})).map(c=>{const k=cl(c.clientId)||{};return[c.id,`${k.ref||''} — ${k.name||''} | عقد ${(c.no||'').split('/').pop()}: ${c.title}`]});
+  else if(f.t==='job')o=db.jobs.filter(j=>(!clientId||j.clientId===clientId)&&(!['مكتمل','ملغي'].includes(j.status)||j.id===val)).map(j=>{const k=cl(j.clientId)||{};return[j.id,`${k.ref||''} — ${k.name||''} | عمل ${(j.no||'').split('/').pop()}: ${j.title}`]});
   else o=f.opts.map(x=>Array.isArray(x)?x:[x,x]);
   const empty=['client','tech','contract','job'].includes(f.t)?`<option value="">— اختر —</option>`:'';
   return empty+o.map(([v,l])=>`<option value="${esc(v)}" ${String(v)===String(val??'')?'selected':''}>${esc(l)}</option>`).join('');
