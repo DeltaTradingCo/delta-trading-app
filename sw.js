@@ -1,5 +1,5 @@
 // Delta Trading Co. — offline support. Bump VERSION when releasing an update.
-const VERSION = 'delta-v20';
+const VERSION = 'delta-v21';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));

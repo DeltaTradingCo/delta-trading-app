@@ -349,15 +349,22 @@ function nextClientRef(div='hvac'){
 }
 const LETTER={contracts:'C',visits:'V',jobs:'J'};
 const EXPIRY_DAYS=60;
-const daysLeft=c=>Math.round((parse(c.end)-parse(today()))/864e5);
-const expiringContracts=()=>db.contracts.filter(c=>contractStatus(c)==='ساري'&&c.end&&daysLeft(c)<=EXPIRY_DAYS).sort((a,b)=>a.end.localeCompare(b.end));
+const isAuto=c=>c.autoRenew==='yes'&&!['ملغي','معلق','لن يُجدد'].includes(c.status);
+function currentEnd(c){if(!c.end)return'';let e=c.end;const t=today();if(isAuto(c)){const m=Number(c.renewMonths)||12;let g=0;while(e<t&&g++<60)e=addDays(addMonths(addDays(e,1),m),-1)}return e}
+const renewedTimes=c=>{let e=c.end,n=0;const ce=currentEnd(c),m=Number(c.renewMonths)||12;while(e&&e<ce&&n<60){e=addDays(addMonths(addDays(e,1),m),-1);n++}return n};
+const noticeDays=c=>{const v=Number(c.noticeValue)||0;return c.noticeUnit==='يوم'?v:Math.round(v*30)};
+const noticeDate=c=>noticeDays(c)?addDays(currentEnd(c),-noticeDays(c)):'';
+const daysLeft=c=>Math.round((parse(currentEnd(c))-parse(today()))/864e5);
+const decisionDays=c=>daysLeft(c)-noticeDays(c);
+const expiringContracts=()=>db.contracts.filter(c=>contractStatus(c)==='ساري'&&c.end&&decisionDays(c)<=EXPIRY_DAYS).sort((a,b)=>decisionDays(a)-decisionDays(b));
+const expiryText=c=>noticeDays(c)?`آخر موعد للإخطار ${fmt(noticeDate(c))} · باقي <b style="color:${decisionDays(c)<=30?'var(--red)':'var(--amber)'}">${Math.max(0,decisionDays(c))} يوم</b>${decisionDays(c)<0?' <b style="color:var(--red)">(فات موعد الإخطار)</b>':''}`:`ينتهي ${fmt(currentEnd(c))} · <b style="color:${daysLeft(c)<=30?'var(--red)':'var(--amber)'}">باقي ${daysLeft(c)} يوم</b>`;
 function childNo(key,clientId){
   const c=cl(clientId);const n=db[key].filter(x=>x.clientId===clientId).reduce((m,x)=>Math.max(m,x.n||0),0)+1;
   return{n,no:`${c?c.ref:'—'}/${LETTER[key]}${n}`};
 }
 function contractStatus(c){
   if(c.status==='ملغي'||c.status==='معلق')return c.status;
-  const t=today();if(c.end&&c.end<t)return'منتهي';if(c.start&&c.start>t)return'لم يبدأ';return'ساري';
+  const t=today(),e=currentEnd(c);if(e&&e<t)return'منتهي';if(c.start&&c.start>t)return'لم يبدأ';return'ساري';
 }
 function visitStatus(v){return v.status==='مجدولة'&&v.date<today()?'متأخرة':v.status}
 
@@ -399,13 +406,23 @@ const ENT={
   {k:'start',l:'تاريخ البداية',t:'date',req:1},
   {k:'end',l:'تاريخ النهاية',t:'date',req:1},
   {k:'frequency',l:'دورية الزيارات',t:'select',opts:FREQ},
-  {k:'status',l:'الحالة',t:'select',opts:['ساري','معلق','ملغي']},
+  {k:'status',l:'الحالة',t:'select',opts:['ساري','معلق','ملغي','لن يُجدد']},
   {k:'value',l:'قيمة العقد (ج.م)',t:'number'},
+  {k:'spareParts',l:'🔩 قطع الغيار',t:'select',opts:['غير شامل قطع غيار','شامل قطع غيار','شامل قطع غيار جزئياً (حتى حد معين)']},
+  {k:'sparesNote',l:'تفاصيل قطع الغيار المشمولة',dep:['spareParts','شامل قطع غيار جزئياً (حتى حد معين)'],ph:'مثال: حتى 5,000 ج.م سنوياً / الفلاتر والسيور فقط'},
+  {k:'autoRenew',l:'🔄 يتجدد تلقائياً؟',t:'select',opts:[['no','لا — ينتهي بانتهاء مدته'],['yes','نعم — يتجدد تلقائياً ما لم يُخطر أحد الطرفين']]},
+  {k:'renewMonths',l:'مدة التجديد (بالشهور)',t:'number',dep:['autoRenew','yes'],ph:'مثال: 12 = لمدة أخرى مماثلة'},
+  {k:'noticeValue',l:'مدة الإخطار قبل الانتهاء',t:'number',ph:'مثال: 2'},
+  {k:'noticeUnit',l:'وحدة مدة الإخطار',t:'select',opts:['شهر','يوم']},
+  {k:'noticeMethod',l:'طريقة الإخطار',ph:'مثال: خطاب مسجل بعلم الوصول',full:1},
+  {k:'renewPricing',l:'شروط التجديد',t:'select',dep:['autoRenew','yes'],opts:['بنفس الأسعار والشروط','بزيادة نسبة على القيمة','بقيمة جديدة يتم الاتفاق عليها']},
+  {k:'renewIncrease',l:'نسبة الزيادة عند التجديد %',t:'number',dep:['renewPricing','بزيادة نسبة على القيمة']},
+  {k:'renewClause',l:'نص بند التجديد / الإنهاء كما في العقد',t:'textarea',full:1,ph:'انسخ هنا نص البند من العقد (مثال: البند الخامس)'},
   {k:'payment',l:'طريقة / مواعيد الدفع'},
   {k:'units',l:'الأجهزة المشمولة بالعقد',t:'textarea',full:1,ph:'مثال: 12 سبليت 2.25 حصان + 3 دولاب 5 حصان'},
   {k:'attachment',l:'📎 ملف العقد الموقّع (PDF أو صورة — حتى 10 ميجا)',t:'file',full:1},
   {k:'notes',l:'ملاحظات',t:'textarea',full:1}],
-  defaults:()=>({kind:'عقد صيانة دورية',start:today(),end:addDays(addMonths(today(),12),-1),frequency:'1',status:'ساري'})},
+  defaults:()=>({kind:'عقد صيانة دورية',start:today(),end:addDays(addMonths(today(),12),-1),frequency:'1',status:'ساري',spareParts:'غير شامل قطع غيار',autoRenew:'no',renewMonths:12,noticeUnit:'شهر',renewPricing:'بنفس الأسعار والشروط'})},
  visits:{one:'زيارة صيانة',fields:[
   {k:'clientId',l:'العميل',t:'client',req:1,full:1},
   {k:'contractId',l:'العقد (اختياري)',t:'contract'},
@@ -507,13 +524,15 @@ function openForm(key,id,defaults={}){
     else if(['select','client','tech','contract','job'].includes(f.t))input=`<select id="${idA}" ${dis}>${optsHtml(f,v,obj.clientId)}</select>`;
     else if(f.t==='textarea')input=`<textarea id="${idA}" placeholder="${esc(f.ph||'')}" ${dis}>${esc(v)}</textarea>`;
     else input=`<input id="${idA}" type="${f.t||'text'}" value="${esc(v)}" placeholder="${esc(f.ph||'')}" ${f.min!=null?`min="${f.min}"`:''} ${f.max!=null?`max="${f.max}"`:''} ${f.t==='number'?'step="any"':''} ${f.t==='tel'||f.t==='email'?'dir="ltr"':''} ${dis}>`;
-    return`<div class="f ${f.full?'full':''}"><label for="${idA}">${f.l} ${f.req?'<span class="req">*</span>':''}</label>${input}</div>`;
+    return`<div class="f ${f.full?'full':''}"${f.dep?` data-dep="${f.dep[0]}" data-depv="${esc(f.dep[1])}"`:''}><label for="${idA}">${f.l} ${f.req?'<span class="req">*</span>':''}</label>${input}</div>`;
   }).join('');
   const contactBtn=['clients','techs'].includes(key)&&!fieldRO(key,'name')?`<div class="btns" style="margin-bottom:12px"><button type="button" class="btn navy" onclick="pickContact()">📱 من جهات الاتصال</button><span class="small muted" style="align-self:center">${hasPicker()?'اختر جهة اتصال من الموبايل':'اختر ملف جهة اتصال (vcf.)'}</span><input type="file" id="vcfIn" accept=".vcf,text/vcard,text/x-vcard" style="display:none" onchange="vcfPicked(this)"></div>`:'';
   $('#mForm').innerHTML=`<div class="form">${ref?`<div class="refbox">الرقم المرجعي: <span class="ref">${esc(ref)}</span></div>`:''}${contactBtn}<div class="fgrid">${fields}</div></div>
    <div class="form-foot"><button type="submit" class="btn primary">💾 حفظ</button><button type="button" class="btn" onclick="closeModal()">إلغاء</button></div>`;
   if(key==='clients'&&!id&&$('#f_division'))$('#f_division').onchange=e=>{const r=$('#mForm .refbox .ref');if(r)r.textContent=nextClientRef(e.target.value).ref+' (سيُعطى تلقائياً)'};
   if(key==='clients'&&id&&isTech()&&$('#f_division'))$('#f_division').disabled=true;
+  const depSync=()=>document.querySelectorAll('#mForm [data-dep]').forEach(w=>{const src=$('#f_'+w.dataset.dep);let on=src&&src.value===w.dataset.depv;const pw=src&&src.closest('[data-dep]');if(pw&&pw.style.display==='none')on=false;w.style.display=on?'':'none'});
+  [...new Set([...document.querySelectorAll('#mForm [data-dep]')].map(w=>w.dataset.dep))].forEach(k=>{const el=$('#f_'+k);if(el)el.addEventListener('change',depSync)});depSync();
   const cs=$('#f_clientId');
   if(cs)cs.onchange=()=>{E.fields.filter(f=>f.t==='contract'||f.t==='job').forEach(f=>{const s=$('#f_'+f.k);s.innerHTML=optsHtml(f,'',cs.value)})};
   $('#mForm').onsubmit=e=>{e.preventDefault();submitForm()};
@@ -650,7 +669,7 @@ function del(key,id){
 }
 function genVisits(contractId,silent){
   const c=byId('contracts',contractId);if(!c)return;const step=Number(c.frequency)||1;let made=0;
-  for(let k=0;;k++){const d=addMonths(c.start,k*step);if(d>c.end)break;
+  for(let k=0;;k++){const d=addMonths(c.start,k*step);if(d>currentEnd(c))break;
     if(db.visits.some(v=>v.contractId===c.id&&v.date===d))continue;
     const v={id:uid(),createdAt:new Date().toISOString(),createdBy:ME.email,clientId:c.clientId,contractId:c.id,type:'دورية',date:d,time:'',techId:'',status:'مجدولة',work:'',parts:'',notes:'',...childNo('visits',c.clientId)};
     db.visits.push(v);put('visits',v);made++}
@@ -701,8 +720,8 @@ const COLS={
  contracts:(withClient=true)=>[
   {h:'رقم العقد',v:r=>`<span class="ref">${esc(r.no)}</span>`},
   ...(withClient?[{h:'العميل',v:r=>clLink(r.clientId)}]:[]),
-  {h:'الموضوع',v:r=>`${esc(r.title)}<br><span class="small muted">${esc(r.kind||'')}</span>`},
-  {h:'المدة',cls:'nowrap',s:r=>r.end||'',v:r=>`${fmt(r.start)} ← ${fmt(r.end)}${contractStatus(r)==='ساري'&&daysLeft(r)<=EXPIRY_DAYS?`<br><b class="small" style="color:${daysLeft(r)<=30?'var(--red)':'var(--amber)'}">⏰ باقي ${daysLeft(r)} يوم</b>`:''}`},
+  {h:'الموضوع',v:r=>`${esc(r.title)}<br><span class="small muted">${esc(r.kind||'')}</span><div style="margin-top:3px">${r.spareParts?`<span class="badge ${r.spareParts==='غير شامل قطع غيار'?'':'b-blue'}">🔩 ${esc(r.spareParts.replace(' (حتى حد معين)',''))}</span> `:''}${r.autoRenew==='yes'?`<span class="badge b-green">🔄 تجديد تلقائي${r.renewMonths?' '+esc(r.renewMonths)+' شهر':''}</span>`:''}${r.status==='لن يُجدد'?' <span class="badge b-red">لن يُجدد</span>':''}</div>`},
+  {h:'المدة',cls:'nowrap',s:r=>currentEnd(r)||'',v:r=>`${fmt(r.start)} ← ${fmt(r.end)}${currentEnd(r)!==r.end?`<br><span class="small" style="color:var(--green-d)">🔄 تجدد ${renewedTimes(r)} مرة — الفترة الحالية حتى ${fmt(currentEnd(r))}</span>`:''}${noticeDays(r)&&contractStatus(r)==='ساري'?`<br><span class="small muted">📨 إخطار قبل ${esc(r.noticeValue)} ${esc(r.noticeUnit||'شهر')} — آخر موعد ${fmt(noticeDate(r))}</span>`:''}${contractStatus(r)==='ساري'&&decisionDays(r)<=EXPIRY_DAYS?`<br><b class="small" style="color:${decisionDays(r)<=30?'var(--red)':'var(--amber)'}">⏰ ${noticeDays(r)?'باقي '+Math.max(0,decisionDays(r))+' يوم على موعد الإخطار':'باقي '+daysLeft(r)+' يوم'}</b>`:''}`},
   {h:'الزيارات',s:r=>Number(r.frequency)||0,v:r=>{const vs=db.visits.filter(v=>v.contractId===r.id);return`${freqName(r.frequency)}<br><span class="small muted">تمت ${vs.filter(v=>v.status==='تمت').length} من ${vs.length}</span>`}},
   {h:'القيمة',cls:'nowrap',s:r=>r.value===''||r.value==null?'':Number(r.value),v:r=>money(r.value)},
   {h:'الحالة',v:r=>badge(contractStatus(r))},
@@ -781,7 +800,7 @@ function viewDashboard(){
   <div class="page-head"><div><h1>أهلاً بك في <bdi>${esc(db.settings.company)}</bdi>${ui0.div?' — '+DIVS[ui0.div].icon+' '+DIVS[ui0.div].short:''}</h1><div class="sub">${dayName(t)} ${fmt(t)}</div></div>
    <div class="btns"><button class="btn primary" onclick="openForm('clients')">+ عميل جديد</button><button class="btn" onclick="openForm('jobs')">+ عمل جديد</button><button class="btn" onclick="openForm('visits')">+ زيارة</button><button class="btn navy" onclick="location.hash='#/daily'">📋 متابعة اليوم</button></div></div>
   ${needBk?`<div class="alert"><span>${MODE==='local'?'⚠️ لم تأخذ نسخة احتياطية منذ أكثر من أسبوع. البيانات محفوظة في هذا المتصفح فقط.':'💾 يُنصح بتنزيل نسخة احتياطية شهرية من البيانات.'}</span><button class="btn sm navy" onclick="exportJSON()">تنزيل نسخة احتياطية الآن</button></div>`:''}
-  ${expiring.length?`<div class="alert no-print" style="background:var(--red-l);border-color:#f3b4b4;color:#8a1f1f"><span>⏰ <b>${expiring.length} عقد</b> ينتهي خلال ${EXPIRY_DAYS} يوم — أقربها: <b>${esc(clName(expiring[0].clientId))}</b> (${esc(expiring[0].no)}) باقي ${daysLeft(expiring[0])} يوم</span><div class="btns"><button class="btn sm" onclick="ui.contracts_exp='${EXPIRY_DAYS}';location.hash='#/contracts'">عرض العقود</button>${notifyBtn()}</div></div>`:''}
+  ${expiring.length?`<div class="alert no-print" style="background:var(--red-l);border-color:#f3b4b4;color:#8a1f1f"><span>⏰ <b>${expiring.length} عقد</b> يحتاج قرار تجديد/إخطار خلال ${EXPIRY_DAYS} يوم — أقربها: <b>${esc(clName(expiring[0].clientId))}</b> (${esc(expiring[0].no)}) — ${expiryText(expiring[0])}</span><div class="btns"><button class="btn sm" onclick="ui.contracts_exp='${EXPIRY_DAYS}';location.hash='#/contracts'">عرض العقود</button>${notifyBtn()}</div></div>`:''}
   ${installBar()}
   ${!db.clients.length?`<div class="card"><h2>ابدأ من هنا 👋</h2><ol style="margin:0;padding-inline-start:20px"><li>أضف <a href="#/techs">الفنيين</a> (الاسم ورقم الواتساب).</li><li>أضف <a href="#/clients">العملاء</a> — كل عميل يأخذ رقم مرجعي تلقائي حسب القسم: <span class="ref">${esc(nextClientRef('hvac').ref)}</span> للتكييف و <span class="ref">${esc(nextClientRef('laundry').ref)}</span> للمغاسل.</li><li>سجّل <a href="#/contracts">عقود الصيانة</a> وأنشئ جدول الزيارات تلقائياً.</li><li>تابع الشغل يومياً من <a href="#/daily">المتابعة اليومية</a> وأرسل مهام كل فني على الواتساب.</li></ol></div>`:''}
   <div class="stats">
@@ -798,7 +817,7 @@ function viewDashboard(){
    <div class="card"><h2>🔧 زيارات اليوم <button class="btn sm" onclick="openForm('visits')">+ زيارة</button></h2>${li(vToday,vItem,'لا توجد زيارات اليوم')}</div>
    <div class="card"><h2>⏰ زيارات متأخرة لم تتم</h2>${li(late,vItem,'لا توجد زيارات متأخرة 👍')}</div>
    <div class="card"><h2>📅 زيارات الأسبوع القادم</h2>${li(upcoming,vItem,'لا توجد زيارات مجدولة خلال 7 أيام')}</div>
-   <div class="card"><h2>📄 عقود تنتهي خلال ${EXPIRY_DAYS} يوم</h2>${li(expiring,c=>`<div class="list-item"><div><div class="t">${clLink(c.clientId)}</div><div class="small muted"><span class="ref">${esc(c.no)}</span> · ينتهي ${fmt(c.end)} · <b style="color:${daysLeft(c)<=30?'var(--red)':'var(--amber)'}">باقي ${daysLeft(c)} يوم</b></div></div><button class="btn sm" onclick="renewContract('${c.id}')">🔄 تجديد</button></div>`,'لا توجد عقود قاربت على الانتهاء')}</div>
+   <div class="card"><h2>📄 عقود تحتاج قرار تجديد / إخطار (${EXPIRY_DAYS} يوم)</h2>${li(expiring,c=>`<div class="list-item"><div><div class="t">${clLink(c.clientId)}</div><div class="small muted"><span class="ref">${esc(c.no)}</span> · ${expiryText(c)}${isAuto(c)?' · 🔄 تجديد تلقائي':''}</div></div><button class="btn sm" onclick="renewContract('${c.id}')">🔄 تجديد</button></div>`,'لا توجد عقود قاربت على الانتهاء')}</div>
    <div class="card"><h2>🏗️ الأعمال الجارية والجديدة <a class="small" href="#/jobs">عرض الكل</a></h2>${li([...jNew,...jRun].sort((a,b)=>(b.priority==='عاجلة')-(a.priority==='عاجلة')),j=>`<div class="list-item"><div><div class="t">${esc(j.title)}</div><div class="small muted">${esc(clName(j.clientId))} · ${tech(j.techId)?esc(tech(j.techId).name):'بدون فني'}${j.due?' · تسليم '+fmt(j.due):''}</div></div><div class="btns">${badge(j.status)}${j.priority!=='عادية'?badge(j.priority):''}<button class="btn sm" onclick="openForm('jobs','${j.id}')">فتح</button></div></div>`,'لا توجد أعمال جارية')}</div>
    <div class="card"><h2>📝 ما تم تسجيله اليوم <button class="btn sm" onclick="openForm('logs')">+ تسجيل</button></h2>${li(logsToday,l=>`<div class="list-item"><div><div class="t">${tech(l.techId)?esc(tech(l.techId).name):'—'}</div><div class="small">${esc(l.work)}</div><div class="small muted">${esc(clName(l.clientId))}</div></div>${badge(l.status)}</div>`,'لم يُسجَّل أي عمل اليوم بعد')}</div>
   </div>`;
@@ -806,8 +825,8 @@ function viewDashboard(){
 function renewContract(id){
   const c=byId('contracts',id);if(!c)return;
   const months=Math.max(1,Math.round((parse(c.end)-parse(c.start))/(30.44*864e5)));
-  const start=addDays(c.end,1);
-  openForm('contracts',null,{clientId:c.clientId,title:c.title,start,end:addDays(addMonths(start,months),-1),frequency:c.frequency,value:c.value,payment:c.payment,units:c.units,notes:'تجديد للعقد '+c.no});
+  const start=addDays(currentEnd(c),1);
+  openForm('contracts',null,{clientId:c.clientId,title:c.title,start,end:addDays(addMonths(start,months),-1),frequency:c.frequency,value:c.value,payment:c.payment,kind:c.kind,spareParts:c.spareParts,sparesNote:c.sparesNote,autoRenew:c.autoRenew,renewMonths:c.renewMonths,noticeValue:c.noticeValue,noticeUnit:c.noticeUnit,noticeMethod:c.noticeMethod,renewPricing:c.renewPricing,renewIncrease:c.renewIncrease,renewClause:c.renewClause,units:c.units,notes:'تجديد للعقد '+c.no});
 }
 
 function listView({key,title,add,cols,filters=[],rows,search,head='',summary=null}){
@@ -892,7 +911,8 @@ function viewContracts(){
    filters:[clientFilter(),{k:'status',l:'الحالة',opts:['ساري','لم يبدأ','منتهي','معلق','ملغي'],test:(c,v)=>contractStatus(c)===v},
     {k:'kind',l:'النوع',opts:CONTRACT_KINDS,test:(c,v)=>c.kind===v},
     {k:'att',l:'الملف',opts:[['y','مرفوع'],['n','بدون ملف']],test:(c,v)=>v==='y'?!!c.attachment:!c.attachment},
-    {k:'exp',l:'الانتهاء',opts:[['60','ينتهي خلال 60 يوم'],['30','ينتهي خلال 30 يوم'],['7','ينتهي خلال 7 أيام']],test:(c,v)=>contractStatus(c)==='ساري'&&c.end<=addDays(today(),+v)}],
+    {k:'exp',l:'الانتهاء',opts:[['60','ينتهي خلال 60 يوم'],['30','ينتهي خلال 30 يوم'],['7','ينتهي خلال 7 أيام']],test:(c,v)=>contractStatus(c)==='ساري'&&decisionDays(c)<=+v},
+    {k:'renew',l:'التجديد',opts:[['yes','🔄 يتجدد تلقائياً'],['no','لا يتجدد تلقائياً'],['spares','🔩 شامل قطع غيار']],test:(c,v)=>v==='spares'?(c.spareParts||'').startsWith('شامل'):(c.autoRenew||'no')===v}],
    cols:COLS.contracts(true)});
 }
 function viewVisits(){
@@ -1072,13 +1092,13 @@ function upsert(k,o){const i=db[k].findIndex(x=>x.id===o.id);if(i>=0)db[k][i]={.
 function exportCSV(key){
   const map={clients:[['_div','القسم'],['ref','الكود'],['name','العميل'],['type','النوع'],['status','الحالة'],['contact','المسؤول'],['phone','الموبايل'],['phone2','تليفون آخر'],['email','البريد'],['area','المنطقة'],['address','العنوان'],['notes','ملاحظات']],
    techs:[['name','الاسم'],['phone','الموبايل'],['specialty','التخصص'],['status','الحالة']],
-   contracts:[['no','رقم العقد'],['_client','العميل'],['title','الموضوع'],['start','البداية'],['end','النهاية'],['_freq','الدورية'],['value','القيمة'],['_status','الحالة'],['units','الأجهزة'],['notes','ملاحظات']],
+   contracts:[['no','رقم العقد'],['_client','العميل'],['title','الموضوع'],['start','البداية'],['end','النهاية'],['_cend','نهاية الفترة الحالية'],['spareParts','قطع الغيار'],['_auto','تجديد تلقائي'],['renewMonths','مدة التجديد (شهر)'],['_notice','مدة الإخطار'],['_ndate','آخر موعد للإخطار'],['renewPricing','شروط التجديد'],['_freq','الدورية'],['value','القيمة'],['_status','الحالة'],['units','الأجهزة'],['notes','ملاحظات']],
    visits:[['no','رقم الزيارة'],['date','التاريخ'],['_client','العميل'],['type','النوع'],['_tech','الفني'],['_vstatus','الحالة'],['work','الأعمال المنفذة'],['parts','قطع الغيار'],['notes','ملاحظات']],
    jobs:[['no','رقم العمل'],['_client','العميل'],['title','العمل'],['kind','النوع'],['_tech','الفني'],['status','الحالة'],['priority','الأولوية'],['start','البدء'],['due','التسليم'],['progress','الإنجاز %'],['_jval','القيمة'],['details','التفاصيل']],
    invoices:[['invNo','رقم الفاتورة'],['date','التاريخ'],['_client','العميل'],['description','البيان'],['amount','المبلغ'],['payStatus','حالة الدفع'],['_paid','المدفوع'],['_due','المتبقي'],['paidDate','تاريخ الدفع'],['method','طريقة الدفع'],['_mp','قوى عاملة'],['_mpS','حالة القوى العاملة'],['_ins','تأمينات مقاولات'],['_insS','حالة التأمينات'],['notes','ملاحظات']],
    logs:[['date','التاريخ'],['_tech','الفني'],['_client','العميل'],['work','العمل المنفذ'],['hours','الساعات'],['status','الحالة'],['notes','ملاحظات']]}[key];
   const ob=(r,k,f)=>r.oblig&&r.oblig[k]&&r.oblig[k].req?(f==='s'?r.oblig[k].status||'لم تُدفع':r.oblig[k].amount):'';
-  const val=(r,k)=>k==='_jval'?jobValue(r):k==='_mp'?ob(r,'manpower'):k==='_mpS'?ob(r,'manpower','s'):k==='_ins'?ob(r,'insurance'):k==='_insS'?ob(r,'insurance','s'):k==='_div'?DIVS[clDiv(r)].short:k==='_paid'?invPaid(r):k==='_due'?invDue(r):k==='_client'?clName(r.clientId):k==='_tech'?(tech(r.techId)?.name||''):k==='_freq'?freqName(r.frequency):k==='_status'?contractStatus(r):k==='_vstatus'?visitStatus(r):r[k];
+  const val=(r,k)=>k==='_cend'?currentEnd(r):k==='_auto'?(r.autoRenew==='yes'?'نعم':'لا'):k==='_notice'?(r.noticeValue?r.noticeValue+' '+(r.noticeUnit||'شهر'):''):k==='_ndate'?noticeDate(r):k==='_jval'?jobValue(r):k==='_mp'?ob(r,'manpower'):k==='_mpS'?ob(r,'manpower','s'):k==='_ins'?ob(r,'insurance'):k==='_insS'?ob(r,'insurance','s'):k==='_div'?DIVS[clDiv(r)].short:k==='_paid'?invPaid(r):k==='_due'?invDue(r):k==='_client'?clName(r.clientId):k==='_tech'?(tech(r.techId)?.name||''):k==='_freq'?freqName(r.frequency):k==='_status'?contractStatus(r):k==='_vstatus'?visitStatus(r):r[k];
   const q=x=>`"${String(x??'').replace(/"/g,'""')}"`;
   const csv='﻿'+[map.map(m=>q(m[1])).join(','),...db[key].map(r=>map.map(m=>q(val(r,m[0]))).join(','))].join('\r\n');
   download(`delta-${key}-${today()}.csv`,csv,'text/csv;charset=utf-8');
