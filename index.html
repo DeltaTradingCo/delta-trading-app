@@ -421,7 +421,8 @@ function openForm(key,id,defaults={}){
     else input=`<input id="${idA}" type="${f.t||'text'}" value="${esc(v)}" placeholder="${esc(f.ph||'')}" ${f.min!=null?`min="${f.min}"`:''} ${f.max!=null?`max="${f.max}"`:''} ${f.t==='number'?'step="any"':''} ${f.t==='tel'||f.t==='email'?'dir="ltr"':''} ${dis}>`;
     return`<div class="f ${f.full?'full':''}"><label for="${idA}">${f.l} ${f.req?'<span class="req">*</span>':''}</label>${input}</div>`;
   }).join('');
-  $('#mForm').innerHTML=`<div class="form">${ref?`<div class="refbox">الرقم المرجعي: <span class="ref">${esc(ref)}</span></div>`:''}<div class="fgrid">${fields}</div></div>
+  const contactBtn=['clients','techs'].includes(key)&&!fieldRO(key,'name')?`<div class="btns" style="margin-bottom:12px"><button type="button" class="btn navy" onclick="pickContact()">📱 من جهات الاتصال</button><span class="small muted" style="align-self:center">${hasPicker()?'اختر جهة اتصال من الموبايل':'اختر ملف جهة اتصال (vcf.)'}</span><input type="file" id="vcfIn" accept=".vcf,text/vcard,text/x-vcard" style="display:none" onchange="vcfPicked(this)"></div>`:'';
+  $('#mForm').innerHTML=`<div class="form">${ref?`<div class="refbox">الرقم المرجعي: <span class="ref">${esc(ref)}</span></div>`:''}${contactBtn}<div class="fgrid">${fields}</div></div>
    <div class="form-foot"><button type="submit" class="btn primary">💾 حفظ</button><button type="button" class="btn" onclick="closeModal()">إلغاء</button></div>`;
   const cs=$('#f_clientId');
   if(cs)cs.onchange=()=>{E.fields.filter(f=>f.t==='contract'||f.t==='job').forEach(f=>{const s=$('#f_'+f.k);s.innerHTML=optsHtml(f,'',cs.value)})};
@@ -430,6 +431,37 @@ function openForm(key,id,defaults={}){
   setTimeout(()=>{const first=$('#mForm input,#mForm select');first&&first.focus()},50);
 }
 function closeModal(){$('#modal').classList.add('hidden');formCtx=null}
+/* ---- phone contacts ---- */
+const hasPicker=()=>'contacts' in navigator&&'select' in navigator.contacts;
+const normPhone=p=>{let n=String(p||'').replace(/[^\d+]/g,'');if(n.startsWith('+20'))n='0'+n.slice(3);else if(n.startsWith('0020'))n='0'+n.slice(4);else if(/^20(1\d{9})$/.test(n))n='0'+n.slice(2);return n};
+async function pickContact(){
+  if(hasPicker()){try{const r=await navigator.contacts.select(['name','tel','email'],{multiple:false});if(r&&r[0])fillContact({name:(r[0].name||[])[0],tels:r[0].tel||[],email:(r[0].email||[])[0]})}
+    catch(e){$('#vcfIn').click()}}
+  else $('#vcfIn').click();
+}
+function qpDecode(v){try{return decodeURIComponent(v.replace(/=\r?\n/g,'').replace(/=([0-9A-F]{2})/gi,'%$1'))}catch(e){return v}}
+function parseVcf(txt){
+  const lines=txt.replace(/\r\n[ \t]/g,'').replace(/\n[ \t]/g,'').replace(/=\r?\n/g,'').split(/\r?\n/);const c={tels:[]};
+  for(const ln of lines){const i=ln.indexOf(':');if(i<0)continue;const head=ln.slice(0,i).toUpperCase(),prop=head.split(';')[0].replace(/^ITEM\d+\./,'');let val=ln.slice(i+1);
+    if(/QUOTED-PRINTABLE/.test(head))val=qpDecode(val);val=val.replace(/\\,/g,',').replace(/\\;/g,';').trim();
+    if(prop==='FN'&&!c.name)c.name=val;
+    else if(prop==='N'&&!c.nameN)c.nameN=val.split(';').filter(Boolean).reverse().join(' ');
+    else if(prop==='TEL'&&val)c.tels.push(val);
+    else if(prop==='EMAIL'&&!c.email)c.email=val;
+    else if(prop==='ORG'&&!c.org)c.org=val.split(';')[0];
+    else if(prop==='TITLE'&&!c.title)c.title=val;
+    if(prop==='END'&&c.name)break}
+  c.name=c.name||c.nameN;return c;
+}
+function vcfPicked(inp){const f=inp.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{const c=parseVcf(String(r.result));if(!c.name&&!c.tels.length)return toast('لم يتم العثور على بيانات في الملف');fillContact(c)};r.readAsText(f);inp.value=''}
+function fillContact(c){
+  const set=(k,v)=>{const el=$('#f_'+k);if(el&&v)el.value=v};const tels=[...new Set((c.tels||[]).map(normPhone).filter(Boolean))];
+  if(formCtx.key==='clients'){
+    if(c.org){set('name',c.org);set('contact',c.name)}else set('name',c.name);
+    set('contactTitle',c.title);set('phone',tels[0]);set('phone2',tels[1]);set('email',c.email);
+  }else{set('name',c.name);set('phone',tels[0]);if(c.email&&/@gmail\.com$/i.test(c.email))set('email',c.email.toLowerCase())}
+  toast('تم إدخال بيانات جهة الاتصال ✅ راجعها ثم احفظ');
+}
 function fieldRO(key,k){if(!isTech())return false;if(key==='logs'&&k==='techId')return true;const t=TECH_EDIT[key];return t==='*'?false:!(t||[]).includes(k)}
 function submitForm(){
   const{key,id}=formCtx;const E=ENT[key];const data={};
