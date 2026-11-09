@@ -92,6 +92,7 @@ a{color:var(--blue);text-decoration:none}
 .oblbox.on{border-color:var(--green);background:#fff}
 .oblhead{display:flex!important;align-items:center;gap:6px;cursor:pointer;margin:0!important}.oblhead input{width:auto!important}
 .oblbody{display:none;margin-top:10px}.oblbox.on .oblbody{display:block}
+.wa-ic{font-size:9px;vertical-align:middle}
 .user-m{display:none;align-items:center;gap:8px;font-size:12px}
 .install-bar{display:none;background:var(--green-l);border:1px solid var(--green);border-radius:12px;padding:10px 14px;margin-bottom:14px;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .install-bar.show{display:flex}
@@ -306,7 +307,9 @@ const tName=id=>tech(id)?.name||'<span class="muted">غير محدد</span>';
 const byId=(k,id)=>db[k].find(x=>x.id===id);
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),2200)}
 function clLink(id){const c=cl(id);return c?`<a href="#/client/${c.id}">${esc(c.name)}</a> <span class="ref small">${esc(c.ref)}</span>`:'—'}
-function telLink(p){return p?`<a href="tel:${esc(p)}" style="direction:ltr;unicode-bidi:embed">${esc(p)}</a>`:'—'}
+function telLink(p){if(!p)return'—';const n=waNum(p),mob=/^201[0125]\d{8}$/.test(n)||(/^\+?\d{10,15}$/.test(String(p).replace(/[\s-]/g,''))&&!/^0[2-9]/.test(String(p).trim())&&!/^20[2-9]/.test(n));
+  const call=`<a href="tel:${esc(p)}" class="no-print" title="اتصال" style="text-decoration:none;margin-inline-start:6px">📞</a>`;
+  return mob?`<a href="https://wa.me/${n}" target="_blank" rel="noopener" title="فتح محادثة واتساب" style="direction:ltr;unicode-bidi:embed;white-space:nowrap"><span class="wa-ic">🟢</span> ${esc(p)}</a>${call}`:`<a href="tel:${esc(p)}" style="direction:ltr;unicode-bidi:embed;white-space:nowrap">${esc(p)}</a>`}
 function waNum(p){let n=String(p||'').replace(/\D/g,'');if(n.startsWith('00'))n=n.slice(2);if(n.startsWith('0'))n='20'+n.slice(1);return n}
 
 /* status badges */
