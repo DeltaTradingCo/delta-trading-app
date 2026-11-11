@@ -270,6 +270,13 @@ let ME=MODE==='local'?{role:'manager',email:'local'}:null;
 let Cloud=null;
 const isTech=()=>ME&&ME.role==='tech';
 const isMgr=()=>ME&&ME.role==='manager';
+const isEng=()=>ME&&ME.role==='engineer';
+const isStaff=()=>isMgr()||isEng();
+const canFin=()=>isMgr();
+const ROLE_NAME={manager:'مدير',engineer:'مهندس',tech:'فني'};
+const CFIN=['value','payment','renewPricing','renewIncrease'];
+const ENG_HIDE={jobs:['value'],contracts:[...CFIN,'attachment']};
+const ENG_BLOCK=['invoices','quotes','techs'];
 /* fields a technician may change */
 const TECH_EDIT={clients:'*',jobs:'*',logs:'*',visits:['status','work','parts','notes','attachments']};
 const TECH_ADD=['clients','jobs','logs'];
@@ -282,7 +289,10 @@ function load(){try{const s=localStorage.getItem(KEY);db=s?JSON.parse(s):blank()
   const b=blank();for(const k in b){if(!(k in db))db[k]=b[k]}db.settings={...b.settings,...db.settings};fixName()}
 function fixName(){if(!db.settings.company||/دلتا/.test(db.settings.company))db.settings.company='Delta Trading Co.'}
 function save(){if(MODE==='cloud')return;try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){toast('تعذّر الحفظ في المتصفح! خذ نسخة احتياطية فوراً')}}
-function put(k,o){MODE==='cloud'?Cloud.set(k,o):save()}
+function put(k,o){if(MODE!=='cloud')return save();
+  if(k==='contracts'){const rest={...o},fin={id:o.id};CFIN.forEach(f=>{if(f in rest){fin[f]=rest[f];delete rest[f]}});Cloud.set('contracts',rest);if(isMgr()&&Object.keys(fin).length>1)Cloud.set('contractPrices',fin);return}
+  Cloud.set(k,o)}
+function mergeContractPrices(){const m={};(db.contractPrices||[]).forEach(p=>m[p.id]=p);db.contracts.forEach(c=>{const p=m[c.id];if(p)CFIN.forEach(f=>{if(f in p)c[f]=p[f]})})}
 function drop(k,id){MODE==='cloud'?Cloud.del(k,id):save()}
 function putSettings(){MODE==='cloud'?Cloud.setSettings(db.settings):save()}
 if(MODE==='local')load();else db=blank();
@@ -538,6 +548,7 @@ let formCtx=null;
 function openForm(key,id,defaults={}){
   const E=ENT[key];const cur=id?byId(key,id):null;
   if(isTech()&&(id?!TECH_EDIT[key]:!TECH_ADD.includes(key)))return toast('ليس لديك صلاحية');
+  if(isEng()&&ENG_BLOCK.includes(key))return toast('ليس لديك صلاحية');
   if(['contracts','visits','jobs'].includes(key)&&!db.clients.length){toast('أضف عميلاً أولاً');return openForm('clients')}
   const obj={...(cur||E.defaults()),...defaults};
   if(key==='jobs'&&cur&&!isTech())obj.value=jobValue(cur);
@@ -549,7 +560,7 @@ function openForm(key,id,defaults={}){
   if(key==='quotes'&&!id)setTimeout(()=>{const el=$('#f_refNo');if(el&&!el.value)el.placeholder=nextQuoteNo()+' (تلقائي)'},0);
   if(key==='letters'&&!id)setTimeout(()=>{const el=$('#f_letterNo');if(el&&!el.value)el.placeholder=nextLetterNo()+' (تلقائي)'},0);
   if(isTech()&&key==='logs')obj.techId=ME.techId;
-  const fields=E.fields.filter(f=>!(isTech()&&(TECH_HIDE[key]||[]).includes(f.k))).map(f=>{
+  const fields=E.fields.filter(f=>!(isTech()&&(TECH_HIDE[key]||[]).includes(f.k))&&!(isEng()&&(ENG_HIDE[key]||[]).includes(f.k))).map(f=>{
     const v=obj[f.k]??'';const idA=`f_${f.k}`;
     const dis=fieldRO(key,f.k)?'disabled':'';
     let input;
@@ -715,6 +726,7 @@ function del(key,id){
   if(key==='jobs'||key==='visits')(o.attachments||[]).forEach(a=>Files.del(a.id));
   if(key==='jobs'&&(db.jobPrices||[]).some(x=>x.id===id)){db.jobPrices=db.jobPrices.filter(x=>x.id!==id);drop('jobPrices',id)}
   if(key==='letters'||key==='quotes')(o.attachments||[]).forEach(a=>Files.del(a.id));
+  if(key==='contracts'&&MODE==='cloud'&&isMgr())Cloud.del('contractPrices',id);
   if(key==='invoices'){(o.attachments||[]).forEach(a=>Files.del(a.id));oblOn(o).forEach(k=>(o.oblig[k].files||[]).forEach(a=>Files.del(a.id)))}
   db[key]=db[key].filter(x=>x.id!==id);
   if(key==='techs'){['visits','jobs','logs'].forEach(k=>db[k].forEach(x=>{if(x.techId===id){x.techId='';put(k,x)}}));if(MODE==='cloud'&&o.email)Cloud.delUser(o.email)}
@@ -749,7 +761,7 @@ function table(rows,cols,emptyMsg='لا توجد بيانات بعد',tid=''){
 }
 const act=(key,id,extra='')=>isTech()
   ?`<div class="btns no-print">${extra}${TECH_EDIT[key]?`<button class="btn sm" onclick="openForm('${key}','${id}')">${key==='clients'?'تعديل':'تحديث'}</button>`:''}</div>`
-  :`<div class="btns no-print">${extra}<button class="btn sm" onclick="openForm('${key}','${id}')">تعديل</button><button class="btn sm danger" onclick="del('${key}','${id}')">حذف</button></div>`;
+  :`<div class="btns no-print">${extra}${isEng()&&key==='techs'?'':`<button class="btn sm" onclick="openForm('${key}','${id}')">تعديل</button>`}${isEng()&&['clients','contracts','techs'].includes(key)?'':`<button class="btn sm danger" onclick="del('${key}','${id}')">حذف</button>`}</div>`;
 const COLS={
  quotes:(withClient=true)=>[
   {h:'رقم المرجع',s:r=>r.refNo,v:r=>`<span class="ref">${esc(r.refNo||'')}</span>${(r.attachments||[]).length?`<div class="btns" style="margin-top:4px">${r.attachments.map((a,i)=>`<button class="btn sm navy" onclick="openFile('${a.id}')" title="${esc(a.name)}">📎 ${r.attachments.length>1?i+1:'العرض'}</button>`).join('')}</div>`:''}`},
@@ -795,9 +807,9 @@ const COLS={
   {h:'الموضوع',v:r=>`${esc(r.title)}<br><span class="small muted">${esc(r.kind||'')}</span><div style="margin-top:3px">${r.spareParts?`<span class="badge ${r.spareParts==='غير شامل قطع غيار'?'':'b-blue'}">🔩 ${esc(r.spareParts.replace(' (حتى حد معين)',''))}</span> `:''}${r.autoRenew==='yes'?`<span class="badge b-green">🔄 تجديد تلقائي${r.renewMonths?' '+esc(r.renewMonths)+' شهر':''}</span>`:''}${r.status==='لن يُجدد'?' <span class="badge b-red">لن يُجدد</span>':''}</div>`},
   {h:'المدة',cls:'nowrap',s:r=>currentEnd(r)||'',v:r=>`${fmt(r.start)} ← ${fmt(r.end)}${currentEnd(r)!==r.end?`<br><span class="small" style="color:var(--green-d)">🔄 تجدد ${renewedTimes(r)} مرة — الفترة الحالية حتى ${fmt(currentEnd(r))}</span>`:''}${noticeDays(r)&&contractStatus(r)==='ساري'?`<br><span class="small muted">📨 إخطار قبل ${esc(r.noticeValue)} ${esc(r.noticeUnit||'شهر')} — آخر موعد ${fmt(noticeDate(r))}</span>`:''}${contractStatus(r)==='ساري'&&decisionDays(r)<=EXPIRY_DAYS?`<br><b class="small" style="color:${decisionDays(r)<=30?'var(--red)':'var(--amber)'}">⏰ ${noticeDays(r)?'باقي '+Math.max(0,decisionDays(r))+' يوم على موعد الإخطار':'باقي '+daysLeft(r)+' يوم'}</b>`:''}`},
   {h:'الزيارات',s:r=>Number(r.frequency)||0,v:r=>{const vs=db.visits.filter(v=>v.contractId===r.id);return`${freqName(r.frequency)}<br><span class="small muted">تمت ${vs.filter(v=>v.status==='تمت').length} من ${vs.length}</span>`}},
-  {h:'القيمة',cls:'nowrap',s:r=>r.value===''||r.value==null?'':Number(r.value),v:r=>money(r.value)},
+  ...(canFin()?[{h:'القيمة',cls:'nowrap',s:r=>r.value===''||r.value==null?'':Number(r.value),v:r=>money(r.value)}]:[]),
   {h:'الحالة',v:r=>badge(contractStatus(r))},
-  {h:'',v:r=>act('contracts',r.id,`${r.attachment?`<button class="btn sm navy" onclick="openFile('${r.attachment.id}')" title="${esc(r.attachment.name)}">📎 العقد</button>`:`<button class="btn sm" onclick="openForm('contracts','${r.id}')" title="رفع ملف العقد">⬆️ رفع العقد</button>`}<button class="btn sm" onclick="genVisits('${r.id}')" title="إنشاء جدول الزيارات">📅 جدولة</button>`)}],
+  {h:'',v:r=>act('contracts',r.id,`${!canFin()?'':r.attachment?`<button class="btn sm navy" onclick="openFile('${r.attachment.id}')" title="${esc(r.attachment.name)}">📎 العقد</button>`:`<button class="btn sm" onclick="openForm('contracts','${r.id}')" title="رفع ملف العقد">⬆️ رفع العقد</button>`}<button class="btn sm" onclick="genVisits('${r.id}')" title="إنشاء جدول الزيارات">📅 جدولة</button>`)}],
  jobs:(withClient=true)=>[
   {h:'رقم العمل',v:r=>`<span class="ref">${esc(r.no)}</span>`},
   ...(withClient?[{h:'العميل',v:r=>clLink(r.clientId)}]:[]),
@@ -845,10 +857,10 @@ const NAV=[['dashboard','🏠','الرئيسية'],['daily','📋','المتاب
 const NAV_TECH=[['daily','📋','مهامي اليومية'],['clients','👥','العملاء'],['jobs','🏗️','الأعمال'],['visits','🔧','زياراتي'],['logs','📝','سجل أعمالي']];
 function renderNav(page){
   const mine=x=>!isTech()||x.techId===ME.techId;
-  const late=db.visits.filter(v=>visitStatus(v)==='متأخرة'&&mine(v)).length,expN=isTech()?0:expiringContracts().length,letN=isTech()?0:lettersDue().length,qN=isTech()?0:quotesDue().length;
+  const late=db.visits.filter(v=>visitStatus(v)==='متأخرة'&&mine(v)).length,expN=isTech()?0:expiringContracts().length,letN=isTech()?0:lettersDue().length,qN=canFin()?quotesDue().length:0;
   $('#userM').innerHTML=ME&&MODE==='cloud'?`${ME.photo?`<img src="${esc(ME.photo)}" style="width:28px;height:28px;border-radius:50%" referrerpolicy="no-referrer">`:''}<span>${esc((ME.name||ME.email).split(' ')[0])}<br><a href="#" onclick="if(confirm('تسجيل الخروج؟'))Cloud.logout();return false">خروج</a></span>`:'';
-  const who=ME&&MODE==='cloud'?`<div class="who" style="padding:8px 12px;border-top:1px solid rgba(255,255,255,.08);margin-top:8px;font-size:13px;color:#cfd4ea">${ME.photo?`<img src="${esc(ME.photo)}" style="width:26px;height:26px;border-radius:50%;vertical-align:middle;margin-inline-end:6px" referrerpolicy="no-referrer">`:''}${esc(ME.name||ME.email)}<br><span class="small" style="color:#9aa1c2">${isTech()?'فني':'مدير'} · <span dir="ltr">${esc(ME.email)}</span></span><br><a href="#" onclick="Cloud.logout();return false" style="color:#9fd36a">تسجيل الخروج</a></div>`:'';
-  $('#nav').innerHTML=(isTech()?NAV_TECH:NAV).map(([k,i,l])=>`<a href="#/${k}" class="${page===k||(page==='client'&&k==='clients')?'on':''}"><span class="ic">${i}</span>${l}${k==='visits'&&late?`<span class="cnt">${late}</span>`:''}${k==='quotes'&&qN?`<span class="cnt">${qN}</span>`:''}${k==='letters'&&letN?`<span class="cnt">${letN}</span>`:''}${k==='contracts'&&expN?`<span class="cnt" style="background:var(--amber)">${expN}</span>`:''}</a>`).join('')+who;
+  const who=ME&&MODE==='cloud'?`<div class="who" style="padding:8px 12px;border-top:1px solid rgba(255,255,255,.08);margin-top:8px;font-size:13px;color:#cfd4ea">${ME.photo?`<img src="${esc(ME.photo)}" style="width:26px;height:26px;border-radius:50%;vertical-align:middle;margin-inline-end:6px" referrerpolicy="no-referrer">`:''}${esc(ME.name||ME.email)}<br><span class="small" style="color:#9aa1c2">${ROLE_NAME[ME.role]||''} · <span dir="ltr">${esc(ME.email)}</span></span><br><a href="#" onclick="Cloud.logout();return false" style="color:#9fd36a">تسجيل الخروج</a></div>`:'';
+  $('#nav').innerHTML=(isTech()?NAV_TECH:isEng()?NAV.filter(n=>!['invoices','quotes','settings'].includes(n[0])):NAV).map(([k,i,l])=>`<a href="#/${k}" class="${page===k||(page==='client'&&k==='clients')?'on':''}"><span class="ic">${i}</span>${l}${k==='visits'&&late?`<span class="cnt">${late}</span>`:''}${k==='quotes'&&qN?`<span class="cnt">${qN}</span>`:''}${k==='letters'&&letN?`<span class="cnt">${letN}</span>`:''}${k==='contracts'&&expN?`<span class="cnt" style="background:var(--amber)">${expN}</span>`:''}</a>`).join('')+who;
   const sw=[['','الكل'],['hvac','❄️ HVAC'],['laundry','🧺 Laundry']].map(([k,l])=>`<button class="${ui0.div===k?'on':''}" onclick="setDiv('${k}')">${l}</button>`).join('');
   $('#divSide').innerHTML=sw;$('#divTop').innerHTML=sw;
   $('#sideFoot').innerHTML=esc(db.settings.email);
@@ -880,10 +892,10 @@ function viewDashboard(){
    <div class="stat" onclick="location.hash='#/contracts'"><div class="n">${active.length}</div><div class="l">عقود سارية</div></div>
    <div class="stat blue" onclick="location.hash='#/daily'"><div class="n">${vToday.length}</div><div class="l">زيارات اليوم</div></div>
    <div class="stat red" onclick="ui.visits_status='متأخرة';location.hash='#/visits'"><div class="n">${late.length}</div><div class="l">زيارات متأخرة</div></div>
-   ${quotesDue().length?`<div class="stat red" onclick="ui.quotes_st='due';location.hash='#/quotes'"><div class="n">${quotesDue().length}</div><div class="l">💼 عروض أسعار متابعتها مستحقة</div></div>`:''}
+   ${canFin()&&quotesDue().length?`<div class="stat red" onclick="ui.quotes_st='due';location.hash='#/quotes'"><div class="n">${quotesDue().length}</div><div class="l">💼 عروض أسعار متابعتها مستحقة</div></div>`:''}
    ${lettersDue().length?`<div class="stat red" onclick="ui.letters_st='due';location.hash='#/letters'"><div class="n">${lettersDue().length}</div><div class="l">✉️ خطابات متابعتها مستحقة</div></div>`:''}
-   ${(()=>{const up=db.invoices.filter(r=>oblUnpaid(r).length),us=db.invoices.filter(r=>oblUnsub(r).length);return up.length||us.length?`<div class="stat amber" onclick="ui.invoices_obl='${up.length?'unpaid':'unsub'}';ui.invoices_pay='';location.hash='#/invoices'"><div class="n" style="font-size:22px">${up.length} / ${us.length}</div><div class="l">قوى عاملة وتأمينات: لم تُدفع / لم تُسلّم للعميل</div></div>`:''})()}
-   <div class="stat red" onclick="ui.invoices_pay='due';location.hash='#/invoices'"><div class="n" style="font-size:22px">${money(db.invoices.reduce((a,r)=>a+invDue(r),0))}</div><div class="l">فواتير غير مسددة (${db.invoices.filter(r=>invDue(r)>0).length})</div></div>
+   ${!canFin()?'':(()=>{const up=db.invoices.filter(r=>oblUnpaid(r).length),us=db.invoices.filter(r=>oblUnsub(r).length);return up.length||us.length?`<div class="stat amber" onclick="ui.invoices_obl='${up.length?'unpaid':'unsub'}';ui.invoices_pay='';location.hash='#/invoices'"><div class="n" style="font-size:22px">${up.length} / ${us.length}</div><div class="l">قوى عاملة وتأمينات: لم تُدفع / لم تُسلّم للعميل</div></div>`:''})()}
+   ${!canFin()?'':`<div class="stat red" onclick="ui.invoices_pay='due';location.hash='#/invoices'"><div class="n" style="font-size:22px">${money(db.invoices.reduce((a,r)=>a+invDue(r),0))}</div><div class="l">فواتير غير مسددة (${db.invoices.filter(r=>invDue(r)>0).length})</div></div>`}
    <div class="stat amber" onclick="ui.jobs_status='جاري التنفيذ';location.hash='#/jobs'"><div class="n">${jRun.length}</div><div class="l">أعمال جارية</div></div>
    <div class="stat blue" onclick="ui.jobs_status='جديد';location.hash='#/jobs'"><div class="n">${jNew.length}</div><div class="l">أعمال جديدة</div></div>
   </div>
@@ -907,7 +919,7 @@ function listView({key,title,add,cols,filters=[],rows,search,head='',summary=nul
   {const b0=rows;rows=()=>{const r=b0();if(!ui0.div)return r;if(key==='techs')return r.filter(techInDiv);if(key==='clients')return r.filter(c=>clDiv(c)===ui0.div);
     return r.filter(x=>x.clientId?clDiv(cl(x.clientId))===ui0.div:(key==='logs'||key==='letters'))}}
   if(isTech()&&['visits','jobs','logs'].includes(key)){const base=rows;rows=()=>base().filter(x=>key==='jobs'?techOwns(x):x.techId===ME.techId);filters=filters.filter(f=>f.k!=='tech')}
-  const canAdd=!isTech()||TECH_ADD.includes(key);
+  const canAdd=(!isTech()||TECH_ADD.includes(key))&&!(isEng()&&ENG_BLOCK.includes(key));
   $('#main').innerHTML=`<div class="page-head"><h1>${title}</h1><div class="btns">${head}${canAdd?`<button class="btn primary" onclick="openForm('${key}')">+ ${add}</button>`:''}<button class="btn" onclick="window.print()">🖨️ طباعة</button></div></div>
   ${printHead(title)}
   <div class="toolbar"><input type="search" id="q" placeholder="🔍 بحث..." value="${esc(ui[key+'_q']||'')}">
@@ -941,7 +953,7 @@ function viewClients(){
    cols:[{h:'القسم',s:c=>clDiv(c),v:c=>divBadge(clDiv(c))},{h:'الرقم المرجعي',s:c=>c.ref,v:c=>`<a href="#/client/${c.id}" class="ref">${esc(c.ref)}</a>`},
     {h:'العميل',v:c=>`<a href="#/client/${c.id}"><b>${esc(c.name)}</b></a><br><span class="small muted">${esc(c.type||'')}</span>`},
     {h:'المسؤول',v:c=>esc(c.contact||'—')},{h:'الموبايل',cls:'nowrap',v:c=>telLink(c.phone)},{h:'المنطقة',v:c=>esc(c.area||'—')},
-    ...(isTech()?[]:[{h:'مستحقات',s:c=>db.invoices.filter(x=>x.clientId===c.id).reduce((a,r)=>a+invDue(r),0),v:c=>{const d=db.invoices.filter(x=>x.clientId===c.id).reduce((a,r)=>a+invDue(r),0);return d?`<b style="color:var(--red)">${money(d)}</b>`:'—'}}]),
+    ...(!canFin()?[]:[{h:'مستحقات',s:c=>db.invoices.filter(x=>x.clientId===c.id).reduce((a,r)=>a+invDue(r),0),v:c=>{const d=db.invoices.filter(x=>x.clientId===c.id).reduce((a,r)=>a+invDue(r),0);return d?`<b style="color:var(--red)">${money(d)}</b>`:'—'}}]),
     ...(isTech()?[]:[{h:'عقود سارية',v:c=>db.contracts.filter(x=>x.clientId===c.id&&contractStatus(x)==='ساري').length}]),
     {h:'أعمال مفتوحة',v:c=>db.jobs.filter(x=>x.clientId===c.id&&['جديد','جاري التنفيذ','معلق'].includes(x.status)).length},
     {h:'الحالة',v:c=>badge(c.status)},{h:'',v:c=>`<div class="btns no-print"><a class="btn sm" href="#/client/${c.id}">ملف العميل</a><button class="btn sm" onclick="openForm('clients','${c.id}')">تعديل</button></div>`}]});
@@ -952,16 +964,16 @@ function viewClient(id){
   const quotes=(db.quotes||[]).filter(k).sort((a,b)=>(b.date||'').localeCompare(a.date||'')),letters=(db.letters||[]).filter(k).sort((a,b)=>(b.date||'').localeCompare(a.date||'')),invoices=(db.invoices||[]).filter(k).sort((a,b)=>(b.date||'').localeCompare(a.date||'')),contracts=db.contracts.filter(k),visits=db.visits.filter(k).sort((a,b)=>b.date.localeCompare(a.date)),jobs=db.jobs.filter(k).sort((a,b)=>(b.n||0)-(a.n||0)),logs=db.logs.filter(k).sort((a,b)=>b.date.localeCompare(a.date));
   $('#main').innerHTML=`${printHead('ملف عميل '+c.ref)}
   <div class="page-head"><div><div class="sub"><a href="#/clients">العملاء</a> ›</div><h1>${esc(c.name)} <span class="ref" style="font-size:18px">${esc(c.ref)}</span> ${divBadge(clDiv(c))}</h1></div>
-   <div class="btns"><button class="btn primary" onclick="openForm('jobs',null,{clientId:'${id}'})">+ عمل جديد</button>${isTech()?`<button class="btn" onclick="openForm('logs',null,{clientId:'${id}'})">+ تسجيل عمل منفذ</button>`:`<button class="btn" onclick="openForm('contracts',null,{clientId:'${id}'})">+ عقد / رفع عقد</button><button class="btn" onclick="openForm('invoices',null,{clientId:'${id}'})">+ فاتورة</button><button class="btn" onclick="openForm('quotes',null,{clientId:'${id}',contactName:${esc(JSON.stringify(c.contact||''))}})">+ عرض سعر</button><button class="btn" onclick="openForm('letters',null,{clientId:'${id}',to:${esc(JSON.stringify((c.contact?c.contact+' — ':'')+c.name))}})">+ خطاب</button><button class="btn" onclick="openForm('visits',null,{clientId:'${id}'})">+ زيارة</button>`}<button class="btn" onclick="openForm('clients','${id}')">تعديل</button><button class="btn" onclick="window.print()">🖨️</button>${isTech()?'':`<button class="btn danger" onclick="del('clients','${id}')">حذف</button>`}</div></div>
+   <div class="btns"><button class="btn primary" onclick="openForm('jobs',null,{clientId:'${id}'})">+ عمل جديد</button>${isTech()?`<button class="btn" onclick="openForm('logs',null,{clientId:'${id}'})">+ تسجيل عمل منفذ</button>`:`<button class="btn" onclick="openForm('contracts',null,{clientId:'${id}'})">+ عقد / رفع عقد</button>${canFin()?`<button class="btn" onclick="openForm('invoices',null,{clientId:'${id}'})">+ فاتورة</button><button class="btn" onclick="openForm('quotes',null,{clientId:'${id}',contactName:${esc(JSON.stringify(c.contact||''))}})">+ عرض سعر</button>`:''}<button class="btn" onclick="openForm('letters',null,{clientId:'${id}',to:${esc(JSON.stringify((c.contact?c.contact+' — ':'')+c.name))}})">+ خطاب</button><button class="btn" onclick="openForm('visits',null,{clientId:'${id}'})">+ زيارة</button>`}<button class="btn" onclick="openForm('clients','${id}')">تعديل</button><button class="btn" onclick="window.print()">🖨️</button>${isTech()?'':`<button class="btn danger" onclick="del('clients','${id}')">حذف</button>`}</div></div>
   <div class="card"><div class="info-grid">
    <div><b>القسم</b>${DIVS[clDiv(c)].name}</div><div><b>النوع</b>${esc(c.type||'—')}</div><div><b>الحالة</b>${badge(c.status)}</div><div><b>المسؤول</b>${esc(c.contact||'—')} ${c.contactTitle?`<span class="muted small">(${esc(c.contactTitle)})</span>`:''}</div>
    <div><b>الموبايل</b>${telLink(c.phone)} ${c.phone?`<a class="no-print small" target="_blank" href="https://wa.me/${waNum(c.phone)}">واتساب</a>`:''}</div><div><b>تليفون آخر</b>${telLink(c.phone2)}</div><div><b>البريد</b>${c.email?`<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`:'—'}</div>
    <div><b>المنطقة</b>${esc(c.area||'—')}</div><div><b>العنوان</b>${esc(c.address||'—')} ${c.location?`<a class="no-print small" target="_blank" href="${esc(c.location)}">الموقع على الخريطة</a>`:''}</div><div><b>تاريخ الإضافة</b>${fmt((c.createdAt||'').slice(0,10))}</div>
    ${c.notes?`<div style="grid-column:1/-1"><b>ملاحظات</b>${esc(c.notes)}</div>`:''}</div></div>
   ${isTech()?'':`<div class="card"><h2>📄 العقود (${contracts.length})</h2>${table(contracts,COLS.contracts(false),'لا توجد عقود لهذا العميل','c_contracts')}</div>`}
-  ${isTech()?'':`<div class="card"><h2>💼 عروض الأسعار (${quotes.length}) <button class="btn sm primary no-print" onclick="openForm('quotes',null,{clientId:'${id}',contactName:${esc(JSON.stringify(c.contact||''))}})">+ عرض سعر</button></h2>${quotes.length?quoteStats(quotes):''}${table(quotes,COLS.quotes(false),'لا توجد عروض أسعار لهذا العميل','c_quotes')}</div>`}
+  ${!canFin()?'':`<div class="card"><h2>💼 عروض الأسعار (${quotes.length}) <button class="btn sm primary no-print" onclick="openForm('quotes',null,{clientId:'${id}',contactName:${esc(JSON.stringify(c.contact||''))}})">+ عرض سعر</button></h2>${quotes.length?quoteStats(quotes):''}${table(quotes,COLS.quotes(false),'لا توجد عروض أسعار لهذا العميل','c_quotes')}</div>`}
   ${isTech()?'':`<div class="card"><h2>✉️ الخطابات الصادرة (${letters.length}) <button class="btn sm primary no-print" onclick="openForm('letters',null,{clientId:'${id}',to:${esc(JSON.stringify((c.contact?c.contact+' — ':'')+c.name))}})">+ خطاب</button></h2>${table(letters,COLS.letters(false),'لا توجد خطابات لهذا العميل','c_letters')}</div>`}
-  ${isTech()?'':`<div class="card"><h2>🧾 الفواتير (${invoices.length}) <button class="btn sm primary no-print" onclick="openForm('invoices',null,{clientId:'${id}'})">+ فاتورة</button></h2>${invoices.length?invSummary(invoices):''}${table(invoices,COLS.invoices(false),'لا توجد فواتير لهذا العميل','c_invoices')}</div>`}
+  ${!canFin()?'':`<div class="card"><h2>🧾 الفواتير (${invoices.length}) <button class="btn sm primary no-print" onclick="openForm('invoices',null,{clientId:'${id}'})">+ فاتورة</button></h2>${invoices.length?invSummary(invoices):''}${table(invoices,COLS.invoices(false),'لا توجد فواتير لهذا العميل','c_invoices')}</div>`}
   <div class="card"><h2>🏗️ الأعمال (${jobs.length})</h2>${table(jobs,COLS.jobs(false),'لا توجد أعمال لهذا العميل','c_jobs')}</div>
   <div class="card"><h2>🔧 زيارات الصيانة (${visits.length})</h2>${table(visits,COLS.visits(false),'لا توجد زيارات','c_visits')}</div>
   <div class="card"><h2>📝 سجل الأعمال اليومية (${logs.length})</h2>${table(logs,COLS.logs(false),'لا يوجد سجل','c_logs')}</div>`;
@@ -1121,12 +1133,13 @@ function printVisit(id){
 /* settings, backup, export */
 function viewSettings(){
   const s=db.settings;
-  const mgrs=(db.users||[]).filter(u=>u.role==='manager').map(u=>u.email);
+  const mgrs=(db.users||[]).filter(u=>u.role==='manager').map(u=>u.email),engs=(db.users||[]).filter(u=>u.role==='engineer').map(u=>u.email);
   $('#main').innerHTML=`<div class="page-head"><h1>الإعدادات والنسخ الاحتياطي</h1></div>
   ${MODE==='local'?`<div class="alert"><span>💻 البرنامج يعمل الآن في <b>الوضع المحلي</b>: البيانات على هذا الجهاز فقط ولا يوجد تسجيل دخول. لتفعيل الدخول بحساب Gmail للمدير والفنيين ومشاركة البيانات بين الأجهزة، اتبع خطوات ربط Firebase في ملف README.</span></div>`
    :`<div class="card"><h2>👤 حسابات الدخول</h2><p class="small" style="margin-top:0">المدير الرئيسي: <span dir="ltr"><b>${OWNER_EMAILS.map(esc).join(', ')}</b></span> (صلاحيات كاملة).<br>الفنيين: يدخلون بحساب Gmail المسجل في <a href="#/techs">صفحة الفنيين</a> ويشوفوا مهامهم فقط.</p>
    <div class="f"><label>مديرين إضافيين (Gmail — كل بريد في سطر)</label><textarea id="s_managers" dir="ltr" placeholder="manager@gmail.com">${esc(mgrs.join('\n'))}</textarea></div>
-   <div style="margin-top:10px"><button class="btn primary" onclick="saveManagers()">💾 حفظ المديرين</button></div></div>`}
+   <div class="f" style="margin-top:10px"><label>👷‍♂️ المهندسين (Gmail — كل بريد في سطر) — كل الشغل بدون أي بيانات مالية</label><textarea id="s_engineers" dir="ltr" placeholder="engineer@gmail.com">${esc(engs.join('\n'))}</textarea></div>
+   <div style="margin-top:10px"><button class="btn primary" onclick="saveManagers()">💾 حفظ الحسابات</button></div></div>`}
   <div class="grid g2">
   <div class="card"><h2>بيانات الشركة والترقيم</h2><div class="fgrid">
    <div class="f"><label>اسم الشركة (عربي)</label><input id="s_company" value="${esc(s.company)}"></div>
@@ -1154,13 +1167,15 @@ function saveSettings(){['company','companyEn','email','phone','prefix','startSe
   db.settings.prefix=(db.settings.prefix||'CH').toUpperCase();db.settings.startSeq=Number(db.settings.startSeq)||1;db.settings.prefixL=(db.settings.prefixL||'CL').toUpperCase();db.settings.startSeqL=Number(db.settings.startSeqL)||1;
   if(db.settings.prefix===db.settings.prefixL)return toast('لازم بادئة كل قسم تكون مختلفة');putSettings();toast('تم حفظ الإعدادات');render()}
 function saveManagers(){
-  const list=[...new Set($('#s_managers').value.split(/[\s,;]+/).map(s=>s.trim().toLowerCase()).filter(s=>/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s)&&!OWNER_EMAILS.includes(s)))];
-  const techMails=db.techs.map(t=>t.email).filter(Boolean);const clash=list.find(e=>techMails.includes(e));
+  const parse_=id=>[...new Set($(id).value.split(/[\s,;]+/).map(s=>s.trim().toLowerCase()).filter(s=>/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s)&&!OWNER_EMAILS.includes(s)))];
+  const mg=parse_('#s_managers'),en=parse_('#s_engineers').filter(e=>!mg.includes(e));
+  const techMails=db.techs.map(t=>t.email).filter(Boolean);const clash=[...mg,...en].find(e=>techMails.includes(e));
   if(clash){toast(`${clash} مسجل كفني`);return}
-  const cur=(db.users||[]).filter(u=>u.role==='manager').map(u=>u.email);
-  cur.filter(e=>!list.includes(e)).forEach(e=>Cloud.delUser(e));
-  list.filter(e=>!cur.includes(e)).forEach(e=>Cloud.setUser(e,{email:e,role:'manager'}));
-  toast('تم حفظ المديرين');
+  const want={};mg.forEach(e=>want[e]='manager');en.forEach(e=>want[e]='engineer');
+  const cur={};(db.users||[]).filter(u=>u.role==='manager'||u.role==='engineer').forEach(u=>cur[u.email]=u.role);
+  Object.keys(cur).filter(e=>!want[e]).forEach(e=>Cloud.delUser(e));
+  Object.keys(want).filter(e=>cur[e]!==want[e]).forEach(e=>Cloud.setUser(e,{email:e,role:want[e]}));
+  toast('تم حفظ الحسابات ✅');
 }
 function download(name,content,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
 async function exportJSON(){toast('جاري تجهيز النسخة الاحتياطية...');db.settings.lastBackup=today();putSettings();const{users,...data}=db;
@@ -1217,6 +1232,7 @@ function render(){
   if(!ME)return;
   let [page,arg]=(location.hash.replace(/^#\/?/,'')||(isTech()?'daily':'dashboard')).split('/');
   if(isTech()&&page!=='client'&&!NAV_TECH.some(n=>n[0]===page))page='daily';
+  if(isEng()&&['invoices','quotes','settings'].includes(page))page='dashboard';
   FULL=db;if(page!=='settings')db=divView(FULL);
   try{renderNav(page);
   ({dashboard:viewDashboard,daily:viewDaily,clients:viewClients,client:()=>viewClient(arg),contracts:viewContracts,invoices:viewInvoices,quotes:viewQuotes,letters:viewLetters,visits:viewVisits,jobs:viewJobs,logs:viewLogs,techs:viewTechs,settings:viewSettings}[page]||viewDashboard)();
@@ -1254,7 +1270,7 @@ async function uploadOblig(obj,k,files){
 }
 async function uploadMany(key,obj,files){
   toast(`جاري رفع ${files.length} ملف...`);let ok=0;
-  for(const f0 of files){try{const f=await shrink(f0);const fid=uid();await Files.put(fid,f,(key==='invoices'||key==='letters'||key==='quotes')?'invoice':'job');
+  for(const f0 of files){try{const f=await shrink(f0);const fid=uid();await Files.put(fid,f,key==='letters'?'letter':(key==='invoices'||key==='quotes')?'invoice':'job');
     obj.attachments=[...(obj.attachments||[]),{id:fid,name:f.name,type:f.type||'image/jpeg',size:f.size,uploadedAt:new Date().toISOString(),uploadedBy:ME.email}];put(key,obj);ok++}catch(e){console.error(e)}}
   toast(ok===files.length?(files.length>1?'تم رفع الملفات ✅':key==='letters'?'تم رفع نسخة الخطاب ✅':key==='quotes'?'تم رفع ملف العرض ✅':key==='invoices'?'تم رفع نسخة الفاتورة ✅':'تم رفع أمر الشغل ✅'):`تم رفع ${ok} من ${files.length} — حاول مرة أخرى للباقي`);render();
 }
@@ -1291,7 +1307,7 @@ if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceW
 function notifyBtn(){return('Notification' in window)&&Notification.permission==='default'?`<button class="btn sm navy" onclick="enableNotify()">🔔 تفعيل التنبيهات</button>`:''}
 async function enableNotify(){try{const r=await Notification.requestPermission();toast(r==='granted'?'تم تفعيل التنبيهات ✅':'لم يتم السماح بالتنبيهات');if(r==='granted'){try{localStorage.removeItem('delta_notified')}catch(e){}checkExpiryNotify()}render()}catch(e){}}
 async function checkExpiryNotify(){
-  if(!isMgr()||!('Notification' in window)||Notification.permission!=='granted')return;
+  if(!isStaff()||!('Notification' in window)||Notification.permission!=='granted')return;
   let last='';try{last=localStorage.getItem('delta_notified')||''}catch(e){}if(last===today())return;
   const ex=expiringContracts();if(!ex.length)return;
   const body=ex.slice(0,5).map(c=>`${clName(c.clientId)} (${c.no}) — باقي ${daysLeft(c)} يوم`).join('\n')+(ex.length>5?`\n+ ${ex.length-5} أخرى`:'');
@@ -1312,7 +1328,7 @@ const G_BTN=`<button class="btn" style="width:100%;justify-content:center;paddin
 const showLogin=()=>gate(`<h2 style="justify-content:center">برنامج متابعة الأعمال والصيانة</h2><p class="muted small">للمدير والفنيين — ادخل بحساب Gmail المسجل لدى الشركة</p>${G_BTN}`);
 const showDenied=e=>gate(`<h2 style="justify-content:center;color:var(--red)">الحساب غير مسجل</h2><p class="small">الحساب <b dir="ltr">${esc(e)}</b> ليس له صلاحية دخول.<br>اطلب من المدير إضافة هذا البريد في بيانات الفني.</p><button class="btn" onclick="Cloud.logout()">الدخول بحساب آخر</button>`);
 const SYNC={pending:{},failed:[]};
-const ENT_NAME={quotes:'عرض سعر',letters:'خطاب',clients:'عميل',techs:'فني',contracts:'عقد',visits:'زيارة',jobs:'عمل',logs:'سجل يومي',invoices:'فاتورة'};
+const ENT_NAME={contractPrices:'قيمة عقد',quotes:'عرض سعر',letters:'خطاب',clients:'عميل',techs:'فني',contracts:'عقد',visits:'زيارة',jobs:'عمل',logs:'سجل يومي',invoices:'فاتورة'};
 const syncLabel=(k,o)=>`${ENT_NAME[k]||k} ${o&&(o.invNo||o.no||o.ref||o.name||o.title)||''}`.trim();
 function syncBanner(){
   const pend=Object.values(SYNC.pending).reduce((a,b)=>a+b,0);let h='';
@@ -1320,6 +1336,8 @@ function syncBanner(){
   if(pend)h+=`<div class="alert no-print"><span>⏳ ${pend} تغيير لم يُرفع للسحابة بعد — تأكد من الاتصال بالإنترنت، وسيتم الرفع تلقائياً.</span></div>`;
   return h;
 }
+let CPMIG=[];
+function migrateContractPrices(){if(!isMgr()||!CPMIG.length)return;const ids=CPMIG;CPMIG=[];ids.forEach(id=>{const c=byId('contracts',id);if(c)put('contracts',c)})}
 function migrateJobValues(){
   const old=db.jobs.filter(j=>'value' in j);if(!old.length)return;
   old.forEach(j=>{const v=j.value;delete j.value;if(v!==''&&v!=null&&!(db.jobPrices||[]).some(x=>x.id===j.id)){const rec={id:j.id,value:v};db.jobPrices.push(rec);put('jobPrices',rec)}put('jobs',j)});
@@ -1348,7 +1366,7 @@ async function startCloud(){
     delUser:e=>FS.deleteDoc(FS.doc(fdb,'users',e)).catch(fail),
     putFile:async(id,b64,type,kind='contract')=>{const CH=700000,n=Math.ceil(b64.length/CH);const bt=FS.writeBatch(fdb);
       for(let i=0;i<n;i++)bt.set(FS.doc(fdb,'files',`${id}_${i}`),{fileId:id,kind,i,n,type:type||'',data:b64.slice(i*CH,(i+1)*CH)});await bt.commit()},
-    getFile:async id=>{const q=await FS.getDocs(isTech()?FS.query(FS.collection(fdb,'files'),FS.where('fileId','==',id),FS.where('kind','==','job')):FS.query(FS.collection(fdb,'files'),FS.where('fileId','==',id)));if(q.empty)return null;
+    getFile:async id=>{const qk=k=>FS.getDocs(FS.query(FS.collection(fdb,'files'),FS.where('fileId','==',id),FS.where('kind','==',k)));let q;if(isMgr())q=await FS.getDocs(FS.query(FS.collection(fdb,'files'),FS.where('fileId','==',id)));else{q=await qk('job');if(q.empty&&isEng())q=await qk('letter')}if(q.empty)return null;
       const parts=q.docs.map(d=>d.data()).sort((a,b)=>a.i-b.i);return b64ToBlob(parts.map(p=>p.data).join(''),parts[0].type)},
     delFile:async id=>{const q=await FS.getDocs(FS.query(FS.collection(fdb,'files'),FS.where('fileId','==',id)));const bt=FS.writeBatch(fdb);q.docs.forEach(d=>bt.delete(d.ref));await bt.commit()},
     bulk:async items=>{for(let i=0;i<items.length;i+=400){const b=FS.writeBatch(fdb);items.slice(i,i+400).forEach(([k,o])=>b.set(FS.doc(fdb,k,o.id),clean(o)));await b.commit().catch(fail)}},
@@ -1364,13 +1382,13 @@ async function startCloud(){
     const email=(u.email||'').toLowerCase();let role=null,techId='';
     if(OWNER_EMAILS.includes(email))role='manager';
     else{try{const s=await FS.getDoc(FS.doc(fdb,'users',email));if(s.exists()){role=s.data().role;techId=s.data().techId||''}}catch(e){console.error(e)}}
-    if(!role||(role==='tech'&&!techId)){showDenied(email);return}
+    if(!role||!['manager','engineer','tech'].includes(role)||(role==='tech'&&!techId)){showDenied(email);return}
     ME={email,role,techId,name:u.displayName,photo:u.photoURL};
     gate(`<p class="muted">جاري تحميل البيانات...</p>`);
-    const cols=role==='manager'?['clients','techs','contracts','visits','jobs','logs','invoices','jobPrices','letters','quotes','users']:['clients','techs','visits','jobs','logs'];
+    const cols=role==='manager'?['clients','techs','contracts','contractPrices','visits','jobs','logs','invoices','jobPrices','letters','quotes','users']:role==='engineer'?['clients','techs','contracts','visits','jobs','logs','letters']:['clients','techs','visits','jobs','logs'];
     const loaded=new Set(),need=cols.length+1;
-    const mark=k=>{if(loaded.has(k))return scheduleRender();loaded.add(k);if(loaded.size===need){gate(null);if(role==='manager')migrateJobValues();render();setTimeout(checkExpiryNotify,1500)}};
-    cols.forEach(k=>unsubs.push(FS.onSnapshot(FS.collection(fdb,k),{includeMetadataChanges:true},snap=>{db[k]=snap.docs.map(d=>k==='users'?{email:d.id,...d.data()}:d.data());const pn=snap.docs.filter(d=>d.metadata.hasPendingWrites).length;if(pn!==(SYNC.pending[k]||0)){SYNC.pending[k]=pn;if(loaded.has(k))scheduleRender()}mark(k)},e=>{console.error(k,e);mark(k)})));
+    const mark=k=>{if(loaded.has(k))return scheduleRender();loaded.add(k);if(loaded.size===need){gate(null);if(role==='manager'){migrateJobValues();migrateContractPrices()}render();setTimeout(checkExpiryNotify,1500)}};
+    cols.forEach(k=>unsubs.push(FS.onSnapshot(FS.collection(fdb,k),{includeMetadataChanges:true},snap=>{db[k]=snap.docs.map(d=>k==='users'?{email:d.id,...d.data()}:d.data());if(k==='contracts'){CPMIG=snap.docs.filter(d=>CFIN.some(f=>f in d.data())).map(d=>d.id);if(CPMIG.length&&role==='manager'&&loaded.size===need)setTimeout(migrateContractPrices,800)}if(k==='contracts'||k==='contractPrices')mergeContractPrices();const pn=snap.docs.filter(d=>d.metadata.hasPendingWrites).length;if(pn!==(SYNC.pending[k]||0)){SYNC.pending[k]=pn;if(loaded.has(k))scheduleRender()}mark(k)},e=>{console.error(k,e);mark(k)})));
     unsubs.push(FS.onSnapshot(FS.doc(fdb,'meta','settings'),s=>{db.settings={...blank().settings,...(s.exists()?s.data():{})};fixName();mark('settings')},e=>{console.error(e);mark('settings')}));
   });
 }

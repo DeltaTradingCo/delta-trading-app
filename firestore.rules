@@ -1,6 +1,7 @@
 rules_version = '2';
 // قواعد الحماية لبرنامج متابعة Delta Trading Co.
-// المدير الرئيسي: deltatradingco.eg@gmail.com — الفنيون يُضافون من داخل البرنامج
+// الأدوار: مدير (كل شيء) — مهندس (كل الشغل بدون أي بيانات مالية) — فني (مهامه فقط)
+// المدير الرئيسي: deltatradingco.eg@gmail.com — باقي الحسابات تُضاف من داخل البرنامج
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -10,90 +11,89 @@ service cloud.firestore {
     function userDoc() { return get(/databases/$(database)/documents/users/$(email())).data; }
     function isOwner() { return signedIn() && email() in ['deltatradingco.eg@gmail.com']; }
     function isManager() { return isOwner() || (signedIn() && hasUser() && userDoc().role == 'manager'); }
+    function isEngineer() { return signedIn() && hasUser() && userDoc().role == 'engineer'; }
+    function isStaff() { return isManager() || isEngineer(); }
     function isTech() { return signedIn() && hasUser() && userDoc().role == 'tech'; }
+    function anyUser() { return isStaff() || isTech(); }
     function myTech() { return userDoc().techId; }
     function onlyChanged(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+    function noMoney(keys) { return !request.resource.data.keys().hasAny(keys); }
 
-    // حسابات الدخول (المديرين والفنيين)
+    // حسابات الدخول
     match /users/{e} {
       allow read: if isManager() || (signedIn() && e == email());
       allow write: if isManager();
     }
 
     match /meta/{doc} {
-      allow read: if isManager() || isTech();
+      allow read: if anyUser();
       allow write: if isManager();
     }
 
-    // العملاء: الفني يضيف ويعدّل (بدون تغيير الكود)، والحذف للمدير فقط
+    // العملاء: الكل يضيف ويعدّل (بدون تغيير الكود) — الحذف للمدير فقط
     match /clients/{id} {
-      allow read: if isManager() || isTech();
-      allow create: if isManager() || (isTech() && request.resource.data.createdBy == email());
-      allow update: if isManager() || (isTech() && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ref', 'seq', 'createdBy']));
+      allow read: if anyUser();
+      allow create: if isStaff() || (isTech() && request.resource.data.createdBy == email());
+      allow update: if isManager() || ((isEngineer() || isTech()) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ref', 'seq', 'createdBy']));
       allow delete: if isManager();
     }
 
     match /techs/{id} {
-      allow read: if isManager() || isTech();
+      allow read: if anyUser();
       allow write: if isManager();
     }
 
-    // العقود والقيم المالية: المدير فقط
+    // العقود (بدون أي قيم مالية) — المهندس يضيف ويعدّل، الحذف للمدير
     match /contracts/{id} {
-      allow read, write: if isManager();
+      allow read: if isStaff();
+      allow create, update: if isManager() || (isEngineer() && noMoney(['value', 'payment', 'renewPricing', 'renewIncrease']));
+      allow delete: if isManager();
     }
 
-    // الفواتير وحالة الدفع: المدير فقط
-    match /invoices/{id} {
-      allow read, write: if isManager();
-    }
+    // ===== البيانات المالية: المدير فقط =====
+    match /contractPrices/{id} { allow read, write: if isManager(); }
+    match /jobPrices/{id}      { allow read, write: if isManager(); }
+    match /invoices/{id}       { allow read, write: if isManager(); }
+    match /quotes/{id}         { allow read, write: if isManager(); }
 
-    // الخطابات الصادرة ومتابعتها: المدير فقط
+    // الخطابات الصادرة: المدير والمهندس
     match /letters/{id} {
-      allow read, write: if isManager();
+      allow read, write: if isStaff();
     }
 
-    // عروض الأسعار وقيمها: المدير فقط
-    match /quotes/{id} {
-      allow read, write: if isManager();
-    }
-
-    // قيمة الأعمال المالية: المدير فقط (منفصلة عن بيانات العمل التي يراها الفني)
-    match /jobPrices/{id} {
-      allow read, write: if isManager();
-    }
-
-    // الملفات المرفوعة: العقود للمدير فقط — صور أوامر الشغل يرفعها ويشوفها الفني أيضاً
+    // الملفات: العقود/الفواتير/العروض للمدير — أوامر الشغل للكل — الخطابات للمدير والمهندس
     match /files/{id} {
-      allow read: if isManager() || (isTech() && resource.data.kind == 'job');
-      allow create: if isManager() || (isTech() && request.resource.data.kind == 'job');
-      allow update, delete: if isManager();
+      allow read: if isManager() || (anyUser() && resource.data.kind == 'job') || (isEngineer() && resource.data.kind == 'letter');
+      allow create: if isManager() || (anyUser() && request.resource.data.kind == 'job') || (isEngineer() && request.resource.data.kind == 'letter');
+      allow update, delete: if isManager() || (isEngineer() && resource.data.kind in ['job', 'letter']);
     }
 
-    // الفني يحدّث حالة وتقرير زياراته ويرفع أمر الشغل فقط
+    // الزيارات: المدير والمهندس كامل — الفني يحدّث زياراته ويرفع أمر الشغل فقط
     match /visits/{id} {
-      allow read: if isManager() || isTech();
-      allow create, delete: if isManager();
-      allow update: if isManager() || (isTech() && resource.data.techId == myTech()
+      allow read: if anyUser();
+      allow create, delete: if isStaff();
+      allow update: if isStaff() || (isTech() && resource.data.techId == myTech()
                     && onlyChanged(['status', 'work', 'parts', 'notes', 'attachments', 'updatedAt', 'updatedBy']));
     }
 
-    // الأعمال: الفني يضيف أعمالاً جديدة ويتابع أعماله (بدون القيمة المالية)، والحذف للمدير فقط
+    // الأعمال (القيمة المالية في jobPrices للمدير فقط)
     match /jobs/{id} {
-      allow read: if isManager() || isTech();
-      allow create: if isManager() || (isTech() && request.resource.data.createdBy == email()
-                    && !request.resource.data.keys().hasAny(['value']));
-      allow update: if isManager() || (isTech() && (resource.data.techId == myTech() || resource.data.createdBy == email())
-                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['value', 'createdBy']));
-      allow delete: if isManager();
+      allow read: if anyUser();
+      allow create: if isManager() || (isEngineer() && noMoney(['value']))
+                    || (isTech() && request.resource.data.createdBy == email() && noMoney(['value']));
+      allow update: if isManager()
+                    || (isEngineer() && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['value']))
+                    || (isTech() && (resource.data.techId == myTech() || resource.data.createdBy == email())
+                        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['value', 'createdBy']));
+      allow delete: if isStaff();
     }
 
-    // سجل الأعمال اليومية: الفني يسجل ويعدّل سجلاته فقط
+    // سجل الأعمال اليومية
     match /logs/{id} {
-      allow read: if isManager() || isTech();
-      allow create: if isManager() || (isTech() && request.resource.data.techId == myTech());
-      allow update: if isManager() || (isTech() && resource.data.techId == myTech() && request.resource.data.techId == myTech());
-      allow delete: if isManager();
+      allow read: if anyUser();
+      allow create: if isStaff() || (isTech() && request.resource.data.techId == myTech());
+      allow update: if isStaff() || (isTech() && resource.data.techId == myTech() && request.resource.data.techId == myTech());
+      allow delete: if isStaff();
     }
   }
 }
