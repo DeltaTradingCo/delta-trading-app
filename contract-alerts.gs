@@ -15,9 +15,6 @@ function checkContracts() {
   const contracts = readCollection_('contracts');
   const clients = {};
   readCollection_('clients').forEach(c => clients[c.id] = c);
-  const prices = {};
-  readCollection_('contractPrices').forEach(p => prices[p.id] = p);
-  contracts.forEach(k => { const p = prices[k.id]; if (p) ['value', 'payment', 'renewPricing', 'renewIncrease'].forEach(f => { if (f in p) k[f] = p[f]; }); });
   const props = PropertiesService.getScriptProperties();
   const today = new Date(Utilities.formatDate(new Date(), 'Africa/Cairo', 'yyyy-MM-dd') + 'T00:00:00');
   const due = [];
