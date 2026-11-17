@@ -909,7 +909,7 @@ function listView({key,title,add,cols,filters=[],rows,search,head='',summary=nul
     return r.filter(x=>x.clientId?clDiv(cl(x.clientId))===ui0.div:(key==='logs'||key==='letters'))}}
   if(isTech()&&['visits','jobs','logs'].includes(key)){const base=rows;rows=()=>base().filter(x=>key==='jobs'?techOwns(x):x.techId===ME.techId);filters=filters.filter(f=>f.k!=='tech')}
   const canAdd=!isTech()||TECH_ADD.includes(key);
-  $('#main').innerHTML=`<div class="page-head"><h1>${title}</h1><div class="btns">${head}${canAdd?`<button class="btn primary" onclick="openForm('${key}')">+ ${add}</button>`:''}<button class="btn" onclick="window.print()">🖨️ طباعة</button></div></div>
+  $('#main').innerHTML=`<div class="page-head"><h1>${title}</h1><div class="btns">${head}${canAdd?`<button class="btn primary" onclick="openForm('${key}')">+ ${add}</button>`:''}${EXP[key]&&!isTech()?`<button class="btn" onclick="exportCSV('${key}',ui.shown['${key}'],'المعروض')" title="تصدير السجلات المعروضة حسب الفلاتر">📥 Excel</button>`:''}<button class="btn" onclick="window.print()">🖨️ طباعة</button></div></div>
   ${printHead(title)}
   <div class="toolbar"><input type="search" id="q" placeholder="🔍 بحث..." value="${esc(ui[key+'_q']||'')}">
   ${filters.map(f=>`<select id="flt_${f.k}"><option value="">${f.l}: الكل</option>${f.opts.map(o=>{const[v,l]=Array.isArray(o)?o:[o,o];return`<option value="${esc(v)}" ${ui[key+'_'+f.k]===v?'selected':''}>${esc(l)}</option>`}).join('')}</select>`).join('')}
@@ -921,7 +921,7 @@ function listView({key,title,add,cols,filters=[],rows,search,head='',summary=nul
     let r=rows();
     filters.forEach(f=>{const v=$('#flt_'+f.k).value;ui[key+'_'+f.k]=v;if(v)r=r.filter(x=>f.test(x,v))});
     if(q)r=r.filter(x=>search(x).toLowerCase().includes(q));
-    $('#cnt').textContent=r.length+' سجل';if(summary)$('#sumBox').innerHTML=summary(r);$('#tbl').innerHTML=table(r,cols,undefined,key);
+    ui.shown=ui.shown||{};ui.shown[key]=sortRows(r,cols,key);$('#cnt').textContent=r.length+' سجل';if(summary)$('#sumBox').innerHTML=summary(r);$('#tbl').innerHTML=table(r,cols,undefined,key);
     const st=ui.sort[key];$('#sortSel').value=st?String(st.i):'';$('#sortDir').textContent=st&&st.d<0?'⬇️ تنازلي':'⬆️ تصاعدي';$('#sortDir').disabled=!st;
   };
   upd.tid=key;ui.refresh=upd;
@@ -1145,7 +1145,7 @@ function viewSettings(){
    <p class="small">آخر نسخة احتياطية: <b>${s.lastBackup?fmt(s.lastBackup):'لم تؤخذ بعد'}</b></p>
    <div class="btns"><button class="btn navy" onclick="exportJSON()">⬇️ تنزيل نسخة احتياطية</button><button class="btn" onclick="$('#importFile').click()">⬆️ استيراد نسخة</button><button class="btn" onclick="mailBackup()">✉️ إرسال تذكير لبريد الشركة</button></div></div>
   <div class="card"><h2>تصدير إلى Excel (CSV)</h2><div class="btns">
-   <button class="btn" onclick="exportCSV('clients')">العملاء</button><button class="btn" onclick="exportCSV('contracts')">العقود</button><button class="btn" onclick="exportCSV('invoices')">الفواتير</button><button class="btn" onclick="exportCSV('quotes')">عروض الأسعار</button><button class="btn" onclick="exportCSV('letters')">الخطابات</button><button class="btn" onclick="exportCSV('visits')">الزيارات</button><button class="btn" onclick="exportCSV('jobs')">الأعمال</button><button class="btn" onclick="exportCSV('logs')">السجل اليومي</button><button class="btn" onclick="exportCSV('techs')">الفنيين</button></div></div>
+   <button class="btn" onclick="openExport('clients')">العملاء</button><button class="btn" onclick="openExport('contracts')">العقود</button><button class="btn" onclick="openExport('invoices')">الفواتير</button><button class="btn" onclick="openExport('quotes')">عروض الأسعار</button><button class="btn" onclick="openExport('letters')">الخطابات</button><button class="btn" onclick="openExport('visits')">الزيارات</button><button class="btn" onclick="openExport('jobs')">الأعمال</button><button class="btn" onclick="openExport('logs')">السجل اليومي</button><button class="btn" onclick="openExport('techs')">الفنيين</button></div></div>
   <div class="card"><h2>إحصائيات</h2><div class="small">العملاء: ${db.clients.length} · الفنيين: ${db.techs.length} · العقود: ${db.contracts.length} · الزيارات: ${db.visits.length} · الأعمال: ${db.jobs.length} · الفواتير: ${db.invoices.length} · السجل اليومي: ${db.logs.length}</div>
    ${MODE==='local'?`<div style="margin-top:12px"><button class="btn danger" onclick="wipe()">🗑️ مسح كل البيانات</button></div>`:''}</div>
   </div>`;
@@ -1194,7 +1194,41 @@ async function mergeImport(d,b){
   toast('تم الاستيراد بنجاح ✅');render();
 }
 function upsert(k,o){const i=db[k].findIndex(x=>x.id===o.id);if(i>=0)db[k][i]={...db[k][i],...o};else db[k].push(o)}
-function exportCSV(key){
+const EXP={
+  invoices:{t:'الفواتير',d:'date',st:[['due','💰 غير المسدد (غير مدفوعة + جزئي)'],['غير مدفوعة','❌ غير مدفوعة'],['مدفوعة جزئياً','◐ مدفوعة جزئياً'],['مدفوعة','✅ مدفوعة']],f:(r,v)=>v==='due'?invDue(r)>0:r.payStatus===v},
+  quotes:{t:'عروض الأسعار',d:'date',st:['مرسل — في انتظار الرد','قيد التفاوض','مقبول ✅','مرفوض','منتهي الصلاحية'].map(x=>[x,x]),f:(r,v)=>(r.qstatus||'مرسل — في انتظار الرد')===v},
+  contracts:{t:'العقود',d:'start',st:['ساري','لم يبدأ','منتهي','معلق','ملغي'].map(x=>[x,x]),f:(r,v)=>contractStatus(r)===v},
+  visits:{t:'الزيارات',d:'date',st:['مجدولة','متأخرة','تمت','مؤجلة','ملغاة'].map(x=>[x,x]),f:(r,v)=>visitStatus(r)===v},
+  jobs:{t:'الأعمال',d:'start',st:['جديد','جاري التنفيذ','معلق','مكتمل','ملغي'].map(x=>[x,x]),f:(r,v)=>r.status===v},
+  letters:{t:'الخطابات',d:'date',st:['في انتظار الرد','تمت المتابعة','تم الرد','مغلق'].map(x=>[x,x]),f:(r,v)=>(r.lstatus||'في انتظار الرد')===v},
+  logs:{t:'السجل اليومي',d:'date'},
+  clients:{t:'العملاء',st:[['نشط','نشط'],['محتمل','محتمل'],['متوقف','متوقف']],f:(r,v)=>r.status===v},
+  techs:{t:'الفنيين'}};
+function openExport(key){
+  const E=EXP[key];if(key==='techs')return exportCSV('techs');
+  $('#mTitle').textContent='📥 تصدير '+E.t+' إلى Excel';
+  const cOpts=[...db.clients].sort((a,b)=>clDiv(a).localeCompare(clDiv(b))||(a.seq||0)-(b.seq||0)).map(c=>`<option value="${c.id}">${esc(c.ref)} — ${esc(c.name)}</option>`).join('');
+  $('#mForm').innerHTML=`<div class="form"><div class="fgrid">
+   ${E.st?`<div class="f full"><label>${key==='invoices'?'حالة الدفع':'الحالة'}</label><select id="x_st"><option value="">الكل</option>${E.st.map(([v,l])=>`<option value="${esc(v)}">${esc(l)}</option>`).join('')}</select></div>`:''}
+   ${key!=='clients'?`<div class="f full"><label>العميل</label><select id="x_cl"><option value="">كل العملاء</option>${cOpts}</select></div>`:''}
+   <div class="f full"><label>القسم</label><select id="x_div"><option value="">الكل (HVAC + Laundry)</option><option value="hvac" ${ui0.div==='hvac'?'selected':''}>❄️ HVAC</option><option value="laundry" ${ui0.div==='laundry'?'selected':''}>🧺 Laundry</option></select></div>
+   ${E.d?`<div class="f"><label>من تاريخ (اختياري)</label><input type="date" id="x_from"></div><div class="f"><label>إلى تاريخ (اختياري)</label><input type="date" id="x_to"></div>`:''}
+   <div class="f full small muted" id="x_cnt"></div></div></div>
+   <div class="form-foot"><button type="submit" class="btn primary">📥 تصدير</button><button type="button" class="btn" onclick="closeModal()">إلغاء</button></div>`;
+  const pick=()=>{const st=$('#x_st')?.value||'',ci=$('#x_cl')?.value||'',dv=$('#x_div').value,fr=$('#x_from')?.value||'',to=$('#x_to')?.value||'';
+    let r=db[key]||[];
+    if(dv)r=r.filter(x=>key==='clients'?clDiv(x)===dv:x.clientId?clDiv(cl(x.clientId))===dv:key==='letters'||key==='logs');
+    if(ci)r=r.filter(x=>x.clientId===ci);
+    if(st)r=r.filter(x=>E.f(x,st));
+    if(fr)r=r.filter(x=>(x[E.d]||'')>=fr);if(to)r=r.filter(x=>(x[E.d]||'')<=to);
+    const tag=[ci?cl(ci)?.ref:'',st?(st==='due'?'غير المسدد':st.replace(/[^\u0600-\u06FF\w ]/g,'').trim()):'',dv?DIVS[dv].short:''].filter(Boolean).join(' ');
+    return{r,tag}};
+  const upd=()=>{const{r}=pick();let t=`${r.length} سجل سيتم تصديره`;if(key==='invoices'&&r.length)t+=` — الإجمالي ${money(r.reduce((a,x)=>a+(Number(x.amount)||0),0))} · المتبقي ${money(r.reduce((a,x)=>a+invDue(x),0))}`;$('#x_cnt').textContent=t};
+  $('#mForm').querySelectorAll('select,input').forEach(el=>el.onchange=upd);upd();
+  $('#mForm').onsubmit=e=>{e.preventDefault();const{r,tag}=pick();exportCSV(key,[...r].sort((a,b)=>String(a[E.d||'ref']||'').localeCompare(String(b[E.d||'ref']||''))),tag);closeModal()};
+  formCtx={key:'export'};$('#modal').classList.remove('hidden');
+}
+function exportCSV(key,rowsIn,tag){
   const map={clients:[['_div','القسم'],['ref','الكود'],['name','العميل'],['type','النوع'],['status','الحالة'],['contact','المسؤول'],['phone','الموبايل'],['phone2','تليفون آخر'],['email','البريد'],['area','المنطقة'],['address','العنوان'],['notes','ملاحظات']],
    techs:[['name','الاسم'],['phone','الموبايل'],['specialty','التخصص'],['status','الحالة']],
    contracts:[['no','رقم العقد'],['_client','العميل'],['title','الموضوع'],['start','البداية'],['end','النهاية'],['_cend','نهاية الفترة الحالية'],['spareParts','قطع الغيار'],['_auto','تجديد تلقائي'],['renewMonths','مدة التجديد (شهر)'],['_notice','مدة الإخطار'],['_ndate','آخر موعد للإخطار'],['renewPricing','شروط التجديد'],['_freq','الدورية'],['value','القيمة'],['_status','الحالة'],['units','الأجهزة'],['notes','ملاحظات']],
@@ -1207,8 +1241,13 @@ function exportCSV(key){
   const ob=(r,k,f)=>r.oblig&&r.oblig[k]&&r.oblig[k].req?(f==='s'?r.oblig[k].status||'لم تُدفع':r.oblig[k].amount):'';
   const val=(r,k)=>k==='_cend'?currentEnd(r):k==='_auto'?(r.autoRenew==='yes'?'نعم':'لا'):k==='_notice'?(r.noticeValue?r.noticeValue+' '+(r.noticeUnit||'شهر'):''):k==='_ndate'?noticeDate(r):k==='_jval'?jobValue(r):k==='_mp'?ob(r,'manpower'):k==='_mpS'?ob(r,'manpower','s'):k==='_ins'?ob(r,'insurance'):k==='_insS'?ob(r,'insurance','s'):k==='_div'?DIVS[clDiv(r)].short:k==='_paid'?invPaid(r):k==='_due'?invDue(r):k==='_client'?clName(r.clientId):k==='_tech'?(tech(r.techId)?.name||''):k==='_freq'?freqName(r.frequency):k==='_status'?contractStatus(r):k==='_vstatus'?visitStatus(r):r[k];
   const q=x=>`"${String(x??'').replace(/"/g,'""')}"`;
-  const csv='﻿'+[map.map(m=>q(m[1])).join(','),...db[key].map(r=>map.map(m=>q(val(r,m[0]))).join(','))].join('\r\n');
-  download(`delta-${key}-${today()}.csv`,csv,'text/csv;charset=utf-8');
+  const rows=rowsIn||db[key];if(!rows.length)return toast('لا توجد سجلات مطابقة للتصدير');
+  const lines=[map.map(m=>q(m[1])).join(','),...rows.map(r=>map.map(m=>q(val(r,m[0]))).join(','))];
+  if(key==='invoices'){const sum=f=>rows.reduce((a,r)=>a+(Number(f(r))||0),0);const tot={amount:sum(r=>r.amount),_paid:sum(invPaid),_due:sum(invDue)};
+    lines.push('',map.map((m,i)=>i===0?q(`الإجمالي (${rows.length} فاتورة)`):m[0] in tot?q(tot[m[0]]):'""').join(','))}
+  if(key==='quotes'){lines.push('',map.map((m,i)=>i===0?q(`الإجمالي (${rows.length} عرض)`):m[0]==='amount'?q(rows.reduce((a,r)=>a+(Number(r.amount)||0),0)):'""').join(','))}
+  const safe=x=>String(x||'').replace(/[\\/:*?"<>|]+/g,' ').trim().slice(0,60);
+  download(`delta-${key}${tag?'-'+safe(tag):''}-${today()}.csv`,'﻿'+lines.join('\r\n'),'text/csv;charset=utf-8');toast(`تم تصدير ${rows.length} سجل ✅`);
 }
 function wipe(){if(!confirm('سيتم مسح كل البيانات نهائياً من هذا المتصفح. هل أخذت نسخة احتياطية؟'))return;if(prompt('اكتب كلمة "مسح" للتأكيد')!=='مسح')return;db=blank();save();toast('تم مسح البيانات');render()}
 
