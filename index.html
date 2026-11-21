@@ -295,7 +295,7 @@ let Cloud=null;
 const isTech=()=>ME&&ME.role==='tech';
 const isMgr=()=>ME&&ME.role==='manager';
 /* fields a technician may change */
-const TECH_EDIT={clients:'*',jobs:'*',logs:'*',visits:['status','work','parts','notes','attachments','signature']};
+const TECH_EDIT={clients:'*',jobs:'*',logs:'*',visits:['status','work','parts','notes','attachments','signature','techSignature']};
 const TECH_ADD=['clients','jobs','logs'];
 const techOwns=x=>x.techId===ME.techId||x.createdBy===ME.email;
 const TECH_HIDE={jobs:['value']};
@@ -475,6 +475,7 @@ const ENT={
   {k:'parts',l:'قطع الغيار / الخامات المستخدمة',t:'textarea',full:1},
   {k:'attachments',l:'📷 أمر الشغل / تقرير الزيارة (اختياري)',t:'files',full:1},
   {k:'signature',l:'✍️ إمضاء العميل (اختياري)',t:'signature',full:1},
+  {k:'techSignature',l:'✍️ إمضاء الفني (اختياري)',t:'signature',full:1},
   {k:'notes',l:'ملاحظات / توصيات',t:'textarea',full:1}],
   defaults:()=>({date:today(),status:'مجدولة',type:'دورية'})},
  jobs:{one:'عمل',fields:[
@@ -583,6 +584,10 @@ function openForm(key,id,defaults={}){
     const dis=fieldRO(key,f.k)?'disabled':'';
     let input;
     if(f.t==='period'){const ro=fieldRO(key,f.k);input=ro?`<div class="small" style="padding:8px 0">${obj.periodFrom?periodTxt({from:obj.periodFrom,to:obj.periodTo}):'—'}</div>`:`<select id="${idA}">${periodOpts(obj.contractId,obj.periodFrom||'',obj.date)||'<option value="">اختر العقد أولاً</option>'}</select>`}
+    else if(f.t==='signature'&&f.k==='techSignature'){input=`<div class="sigfield">
+      <div id="sigPrev_t">${v?`<img src="${v}" class="sigimg" alt="إمضاء الفني">`:'<div class="small muted">لم يوقّع الفني بعد</div>'}</div>
+      <div class="btns" style="margin-top:6px"><button type="button" class="btn primary" onclick="openSigPad('tech')">✍️ ${v?'إعادة توقيع الفني':'إمضاء الفني'}</button>${v?`<label class="small" style="display:inline-flex;align-items:center;gap:4px;font-weight:600"><input type="checkbox" id="f_tsig_rm" style="width:auto"> حذف الإمضاء</label>`:''}</div>
+      ${obj.techSignedAt?`<div class="small muted" style="margin-top:4px">وقّع الفني في ${fmtDT(obj.techSignedAt)}</div>`:''}</div>`}
     else if(f.t==='signature'){const sn=obj.signedName||(cl(obj.clientId)||{}).contact||'';input=`<div class="sigfield">
       <div id="sigPrev">${v?`<img src="${v}" class="sigimg" alt="إمضاء العميل">`:'<div class="small muted">لم يوقّع العميل بعد</div>'}</div>
       <div class="btns" style="margin-top:6px"><button type="button" class="btn primary" onclick="openSigPad()">✍️ ${v?'إعادة التوقيع':'إمضاء العميل'}</button>${v?`<label class="small" style="display:inline-flex;align-items:center;gap:4px;font-weight:600"><input type="checkbox" id="f_sig_rm" style="width:auto"> حذف الإمضاء</label>`:''}</div>
@@ -658,7 +663,7 @@ function fillContact(c){
 }
 function fieldRO(key,k){if(!isTech())return false;if(key==='logs'&&k==='techId')return true;const t=TECH_EDIT[key];return t==='*'?false:!(t||[]).includes(k)}
 function submitForm(){
-  const{key,id}=formCtx;const E=ENT[key];const data={};const newSig=formCtx.sig||null;
+  const{key,id}=formCtx;const E=ENT[key];const data={};const newSig=formCtx.sig||null,newTSig=formCtx.tsig||null;
   for(const f of E.fields){const el=$('#f_'+f.k);if(!el||fieldRO(key,f.k)||f.t==='file'||f.t==='files'||f.t==='oblig'||f.t==='signature'||f.t==='period')continue;
     let v=el.value.trim();if(f.t==='number'&&v!=='')v=Number(v);if(f.t==='email')v=v.toLowerCase();data[f.k]=v;
     if(f.req&&(v===''||v==null)){toast('برجاء إدخال: '+f.l);el.focus();return}}
@@ -708,6 +713,10 @@ function submitForm(){
     else if($('#f_sig_rm')?.checked){data.signature='';data.signedAt=''}
     data.signedName=$('#f_signedName').value.trim();
   }
+  if(key==='visits'&&$('#sigPrev_t')){
+    if(newTSig){data.techSignature=newTSig;data.techSignedAt=new Date().toISOString()}
+    else if($('#f_tsig_rm')?.checked){data.techSignature='';data.techSignedAt=''}
+  }
   const upFile=$('#f_attachment')?.files?.[0],rmFile=$('#f_attach_rm')?.checked;
   const multi=[...($('#f_cam')?.files||[]),...($('#f_pick')?.files||[])],rmMulti=[...document.querySelectorAll('.f_rm:checked')].map(x=>x.value);
   if(multi.some(f=>!/^image\//.test(f.type)&&f.size>10*1024*1024)){toast('حجم الملف أكبر من 10 ميجا');return}
@@ -738,7 +747,7 @@ function submitForm(){
   }else if(rmFile&&obj.attachment){Files.del(obj.attachment.id);obj.attachment=null;put(key,obj)}
   if(rmMulti.length){rmMulti.forEach(fid=>{if(!isTech())Files.del(fid)});obj.attachments=(obj.attachments||[]).filter(a=>!rmMulti.includes(a.id));put(key,obj)}
   if(multi.length)uploadMany(key,obj,multi);
-  if(key==='visits'&&newSig)setTimeout(()=>showVisitReport(obj.id),350);
+  if(key==='visits'&&(newSig||newTSig))setTimeout(()=>showVisitReport(obj.id),350);
   if(key==='invoices'){oblRm.forEach(fid=>Files.del(fid));for(const k in oblNew)uploadOblig(obj,k,oblNew[k])}
   if(key==='techs'&&MODE==='cloud'){
     if(oldEmail&&oldEmail!==obj.email)Cloud.delUser(oldEmail);
@@ -853,7 +862,7 @@ const COLS={
   {h:'النوع',v:r=>esc(r.type)},{h:'الفني',s:r=>techText(r),v:r=>techLabel(r)},
   {h:'الحالة',v:r=>badge(visitStatus(r))},
   {h:'أمر الشغل',s:r=>(r.attachments||[]).length,v:r=>(r.attachments||[]).length?`<div class="btns">${r.attachments.map((a,i)=>`<button class="btn att" onclick="openFile('${a.id}')" title="${esc(a.name)}">📎 ${r.attachments.length>1?i+1:'أمر الشغل'}</button>`).join('')}</div>`:'—'},
-  {h:'الإمضاء',s:r=>r.signature?1:0,v:r=>r.signature?`<button class="btn att" style="background:var(--green);border-color:var(--green)" onclick="showVisitReport('${r.id}')" title="${esc(r.signedName||'')}">✍️ موقّع${r.signedName?' — '+esc(r.signedName):''}</button>`:'<span class="muted small">—</span>'},
+  {h:'الإمضاء',s:r=>(r.signature?1:0)+(r.techSignature?1:0),v:r=>(r.techSignature?'<span class="badge b-blue" style="margin-bottom:3px">✍️ الفني</span><br>':'')+(r.signature?`<button class="btn att" style="background:var(--green);border-color:var(--green)" onclick="showVisitReport('${r.id}')" title="${esc(r.signedName||'')}">✍️ العميل${r.signedName?' — '+esc(r.signedName):''}</button>`:(r.techSignature?'':'<span class="muted small">—</span>'))},
   {h:'',v:r=>act('visits',r.id,`${r.status!=='تمت'?`<button class="btn sm primary" onclick="quickDone('${r.id}')">✓ تمت</button>`:''}<button class="btn sm" onclick="printVisit('${r.id}')">🖨️</button>`)}],
  contracts:(withClient=true)=>[
   {h:'رقم العقد',v:r=>`<span class="ref">${esc(r.no)}</span>`},
@@ -1172,9 +1181,9 @@ function sendWA(techId){
 /* ===== customer signature pad ===== */
 const fmtDT=iso=>{if(!iso)return'';const d=new Date(iso),h=d.getHours(),mm=String(d.getMinutes()).padStart(2,'0');return fmt(iso2local(d))+' — '+((h%12)||12)+':'+mm+(h<12?' ص':' م')};
 const iso2local=d=>iso(d);
-function openSigPad(){
-  const c=cl($('#f_clientId')?.value)||{};const pad=document.createElement('div');pad.id='sigPad';pad.className='sigpad';
-  pad.innerHTML=`<div class="sig-top"><div><b>✍️ إمضاء العميل</b><div class="small muted">${esc(c.name||'')}${c.ref?' — '+esc(c.ref):''}</div></div><button type="button" class="x" onclick="closeSigPad()">×</button></div>
+function openSigPad(who){
+  SIGWHO=who==='tech'?'tech':'client';const c=cl($('#f_clientId')?.value)||{},tsel=$('#f_techId'),tnm=tsel&&tsel.value==='__ext'?($('#f_extTech')?.value||'فني خارجي'):(tech(tsel?tsel.value:'')||{}).name||'';const pad=document.createElement('div');pad.id='sigPad';pad.className='sigpad';
+  pad.innerHTML=`<div class="sig-top"><div><b>✍️ ${SIGWHO==='tech'?'إمضاء الفني':'إمضاء العميل'}</b><div class="small muted">${SIGWHO==='tech'?esc(tnm):esc(c.name||'')+(c.ref?' — '+esc(c.ref):'')}</div></div><button type="button" class="x" onclick="closeSigPad()">×</button></div>
    <div class="sig-area"><canvas id="sigCanvas"></canvas><div class="sig-hint">وقّع هنا بصباعك</div><div class="sig-base"></div></div>
    <div class="sig-bot"><button type="button" class="btn" onclick="sigClear()">🧹 مسح</button><button type="button" class="btn" onclick="closeSigPad()">إلغاء</button><button type="button" class="btn primary" onclick="sigSave()">💾 حفظ الإمضاء</button></div>`;
   document.body.appendChild(pad);document.body.style.overflow='hidden';
@@ -1189,7 +1198,7 @@ function openSigPad(){
   cv.onpointermove=e=>{if(!drawing)return;e.preventDefault();const evs=e.getCoalescedEvents?e.getCoalescedEvents():[e];for(const ev of evs){const p=pt(ev);const m={x:(last.x+p.x)/2,y:(last.y+p.y)/2};ctx.beginPath();ctx.moveTo(last.mx??last.x,last.my??last.y);ctx.quadraticCurveTo(last.x,last.y,m.x,m.y);ctx.stroke();last={x:p.x,y:p.y,mx:m.x,my:m.y};grow(p)}};
   cv.onpointerup=cv.onpointercancel=()=>{drawing=false;last=null};
 }
-let SIG=null;
+let SIG=null,SIGWHO='client';
 function sigClear(){if(!SIG)return;SIG.ctx.clearRect(0,0,SIG.cv.width,SIG.cv.height);SIG.box=null;const h=document.querySelector('#sigPad .sig-hint');if(h)h.style.display=''}
 function closeSigPad(){const p=$('#sigPad');if(p)p.remove();document.body.style.overflow='';if(SIG)window.removeEventListener('resize',SIG.fit);SIG=null;try{if(document.fullscreenElement)document.exitFullscreen()}catch(e){}}
 function sigSave(){
@@ -1197,8 +1206,8 @@ function sigSave(){
   const b=SIG.box,pd=24*(window.devicePixelRatio||1),x=Math.max(0,b.x0-pd),y=Math.max(0,b.y0-pd),w=Math.min(SIG.cv.width,b.x1+pd)-x,h=Math.min(SIG.cv.height,b.y1+pd)-y;
   const k=Math.min(1,700/w),out=document.createElement('canvas');out.width=Math.round(w*k);out.height=Math.round(h*k);const o=out.getContext('2d');
   o.fillStyle='#fff';o.fillRect(0,0,out.width,out.height);o.drawImage(SIG.cv,x,y,w,h,0,0,out.width,out.height);
-  const url=out.toDataURL('image/png');if(formCtx)formCtx.sig=url;
-  const pv=$('#sigPrev');if(pv)pv.innerHTML=`<img src="${url}" class="sigimg" alt="إمضاء العميل"><div class="small" style="color:var(--green-d)">✅ تم التوقيع — اضغط "حفظ" لحفظ الزيارة</div>`;
+  const url=out.toDataURL('image/png'),isT=SIGWHO==='tech';if(formCtx){if(isT)formCtx.tsig=url;else formCtx.sig=url}
+  const pv=$(isT?'#sigPrev_t':'#sigPrev');if(pv)pv.innerHTML=`<img src="${url}" class="sigimg" alt="إمضاء"><div class="small" style="color:var(--green-d)">✅ تم التوقيع — اضغط "حفظ" لحفظ الزيارة</div>`;
   closeSigPad();toast('تم حفظ الإمضاء ✅ — اضغط حفظ الزيارة');
 }
 
@@ -1220,7 +1229,7 @@ function visitReportHTML(v){
   ${(v.attachments||[]).length?`<div class="small" style="margin:-4px 0 10px">📎 مرفق: ${v.attachments.length} صورة/ملف (أمر الشغل)</div>`:''}
   <div class="sign2"><div class="sigcol"><div class="rep-sec">توقيع العميل</div><div class="sigbox">${v.signature?`<img src="${v.signature}" alt="إمضاء العميل">`:''}</div>
    <div class="small">الاسم: <b>${esc(v.signedName||'')}</b></div><div class="small">تاريخ ووقت التوقيع: <b>${v.signedAt?fmtDT(v.signedAt):''}</b></div><div class="small">رقم الزيارة: <b class="ref">${esc(v.no)}</b></div></div>
-   <div class="sigcol"><div class="rep-sec">الفني</div><div class="sigbox"></div><div class="small">الاسم: <b>${v.extTech?esc(v.extTech):t?esc(t.name):''}</b></div></div></div>
+   <div class="sigcol"><div class="rep-sec">توقيع الفني</div><div class="sigbox">${v.techSignature?`<img src="${v.techSignature}" alt="إمضاء الفني">`:''}</div><div class="small">الاسم: <b>${v.extTech?esc(v.extTech):t?esc(t.name):''}</b></div><div class="small">تاريخ ووقت التوقيع: <b>${v.techSignedAt?fmtDT(v.techSignedAt):''}</b></div></div></div>
   <div class="rep-foot">صدر بتاريخ ${fmtDT(new Date().toISOString())} — <bdi dir="ltr">${esc(db.settings.companyEn||'Delta Trading Co.')}</bdi></div></div>`;
 }
 function showVisitReport(id){
