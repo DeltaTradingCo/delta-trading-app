@@ -838,7 +838,7 @@ const COLS={
   {h:'',v:r=>act('invoices',r.id,r.payStatus!=='مدفوعة'?`<button class="btn sm primary" onclick="markPaid('${r.id}')">✓ تم الدفع</button>`:'')}],
  visits:(withClient=true)=>[
   {h:'رقم الزيارة',s:r=>r.no,v:r=>`<span class="ref">${esc(r.no)}</span>`},
-  {h:'التاريخ',cls:'nowrap',s:r=>(r.date||'')+(r.time||''),v:r=>{const p=visitPeriod(r);return`${fmt(r.date)} <span class="muted small">${dayName(r.date)}</span>${r.time?` <span class="small">${esc(r.time)}</span>`:''}${p?`<br><span class="small" style="color:var(--navy)">📅 عن الفترة ${periodTxt(p)}</span>`:''}${periodDup(r)?`<br><span class="badge b-red">⚠️ زيارتين في نفس الفترة</span>`:''}`}},
+  {h:'التاريخ',cls:'nowrap',s:r=>(r.date||'')+(r.time||''),v:r=>{const p=visitPeriod(r);return`${fmt(r.date)} <span class="muted small">${dayName(r.date)}</span>${r.time?` <span class="small">${esc(r.time)}</span>`:''}${p?`<br><span class="small" style="color:var(--navy)">📅 عن الفترة ${periodTxt(p)}</span>`:''}`}},
   ...(withClient?[{h:'العميل',v:r=>clLink(r.clientId)}]:[]),
   {h:'النوع',v:r=>esc(r.type)},{h:'الفني',v:r=>tName(r.techId)},
   {h:'الحالة',v:r=>badge(visitStatus(r))},
