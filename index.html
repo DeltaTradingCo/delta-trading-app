@@ -199,6 +199,26 @@ th.sortable{cursor:pointer;user-select:none}th.sortable:hover{color:var(--navy);
 .alert{background:var(--amber-l);border:1px solid #f0d58a;color:#7a5a00;border-radius:10px;padding:10px 14px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 /* print */
 #printArea{display:none}
+.sigimg{max-width:100%;max-height:130px;border:1px dashed var(--line);border-radius:8px;background:#fff;padding:4px}
+.sigpad{position:fixed;inset:0;background:#fff;z-index:400;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+.sig-top{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:3px solid var(--green)}
+.sig-area{flex:1;position:relative;margin:10px;border:2px dashed #c9cfdc;border-radius:12px;overflow:hidden}
+.sig-area canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair}
+.sig-hint{position:absolute;top:45%;left:0;right:0;text-align:center;color:#b5bccb;font-size:22px;font-weight:700;pointer-events:none}
+.sig-base{position:absolute;left:8%;right:8%;bottom:28%;border-bottom:2px solid #dde2ea;pointer-events:none}
+.sig-bot{display:flex;gap:10px;justify-content:center;padding:10px 16px 14px;border-top:1px solid var(--line)}
+.sig-bot .btn{padding:12px 20px;font-size:16px}
+.repview{position:fixed;inset:0;background:#e9ecf2;z-index:350;overflow:auto}
+.rep-bar{position:sticky;top:0;background:var(--navy);color:#fff;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 16px;padding-top:calc(10px + env(safe-area-inset-top));z-index:2}
+.rep-paper{max-width:820px;margin:16px auto 40px;background:#fff;padding:26px 30px;box-shadow:0 4px 24px rgba(0,0,0,.12);border-radius:6px}
+@media (max-width:600px){.rep-paper{margin:0;padding:14px 12px;border-radius:0}.rep-bar .btn{padding:7px 10px;font-size:13px}}
+.rep-t{width:100%;border-collapse:collapse;margin-bottom:14px;font-size:13.5px}.rep-t th{background:#f3f5f9;width:16%;white-space:nowrap}
+.rep-t td,.rep-t th{border:1px solid #bbb;padding:6px 8px;text-align:right;vertical-align:top}
+.rep-sec{font-weight:800;color:var(--navy);margin:8px 0 4px;font-size:14px}
+.sign2{display:flex;gap:24px;margin-top:18px}.sigcol{flex:1;border:1px solid #bbb;border-radius:8px;padding:8px 12px}
+.sigbox{height:110px;border-bottom:1px solid #333;margin-bottom:6px;display:flex;align-items:center;justify-content:center}.sigbox img{max-height:105px;max-width:100%}
+.rep-foot{margin-top:16px;padding-top:6px;border-top:1px solid #ddd;font-size:11px;color:#888;text-align:center}
+@media print{.repview,.sigpad{display:none!important}}
 .print-head{display:none}
 @media print{
   body{background:#fff;font-size:13px}
@@ -272,7 +292,7 @@ let Cloud=null;
 const isTech=()=>ME&&ME.role==='tech';
 const isMgr=()=>ME&&ME.role==='manager';
 /* fields a technician may change */
-const TECH_EDIT={clients:'*',jobs:'*',logs:'*',visits:['status','work','parts','notes','attachments']};
+const TECH_EDIT={clients:'*',jobs:'*',logs:'*',visits:['status','work','parts','notes','attachments','signature']};
 const TECH_ADD=['clients','jobs','logs'];
 const techOwns=x=>x.techId===ME.techId||x.createdBy===ME.email;
 const TECH_HIDE={jobs:['value']};
@@ -447,6 +467,7 @@ const ENT={
   {k:'work',l:'الأعمال المنفذة / تقرير الفني',t:'textarea',full:1},
   {k:'parts',l:'قطع الغيار / الخامات المستخدمة',t:'textarea',full:1},
   {k:'attachments',l:'📷 أمر الشغل / تقرير الزيارة (اختياري)',t:'files',full:1},
+  {k:'signature',l:'✍️ إمضاء العميل (اختياري)',t:'signature',full:1},
   {k:'notes',l:'ملاحظات / توصيات',t:'textarea',full:1}],
   defaults:()=>({date:today(),status:'مجدولة',type:'دورية'})},
  jobs:{one:'عمل',fields:[
@@ -554,7 +575,12 @@ function openForm(key,id,defaults={}){
     const v=obj[f.k]??'';const idA=`f_${f.k}`;
     const dis=fieldRO(key,f.k)?'disabled':'';
     let input;
-    if(f.t==='oblig')input=Object.keys(OBL).map(k=>{const o=(v||{})[k]||{};return`<div class="oblbox ${o.req?'on':''}">
+    if(f.t==='signature'){const sn=obj.signedName||(cl(obj.clientId)||{}).contact||'';input=`<div class="sigfield">
+      <div id="sigPrev">${v?`<img src="${v}" class="sigimg" alt="إمضاء العميل">`:'<div class="small muted">لم يوقّع العميل بعد</div>'}</div>
+      <div class="btns" style="margin-top:6px"><button type="button" class="btn primary" onclick="openSigPad()">✍️ ${v?'إعادة التوقيع':'إمضاء العميل'}</button>${v?`<label class="small" style="display:inline-flex;align-items:center;gap:4px;font-weight:600"><input type="checkbox" id="f_sig_rm" style="width:auto"> حذف الإمضاء</label>`:''}</div>
+      <div class="f" style="margin-top:8px"><label for="f_signedName">اسم المُوقّع</label><input id="f_signedName" value="${esc(sn)}" placeholder="اسم الشخص اللي مضى"></div>
+      ${obj.signedAt?`<div class="small muted" style="margin-top:4px">وُقّع في ${fmtDT(obj.signedAt)}</div>`:''}</div>`}
+    else if(f.t==='oblig')input=Object.keys(OBL).map(k=>{const o=(v||{})[k]||{};return`<div class="oblbox ${o.req?'on':''}">
       <label class="oblhead"><input type="checkbox" id="ob_${k}_req" ${o.req?'checked':''} onchange="this.closest('.oblbox').classList.toggle('on',this.checked)"> <b>${OBL[k]}</b> <span class="small muted">— مطلوبة على هذه الفاتورة</span></label>
       <div class="oblbody"><div class="fgrid">
        <div class="f"><label>المبلغ (ج.م)</label><input id="ob_${k}_amount" type="number" step="any" value="${esc(o.amount??'')}"></div>
@@ -620,8 +646,8 @@ function fillContact(c){
 }
 function fieldRO(key,k){if(!isTech())return false;if(key==='logs'&&k==='techId')return true;const t=TECH_EDIT[key];return t==='*'?false:!(t||[]).includes(k)}
 function submitForm(){
-  const{key,id}=formCtx;const E=ENT[key];const data={};
-  for(const f of E.fields){const el=$('#f_'+f.k);if(!el||fieldRO(key,f.k)||f.t==='file'||f.t==='files'||f.t==='oblig')continue;
+  const{key,id}=formCtx;const E=ENT[key];const data={};const newSig=formCtx.sig||null;
+  for(const f of E.fields){const el=$('#f_'+f.k);if(!el||fieldRO(key,f.k)||f.t==='file'||f.t==='files'||f.t==='oblig'||f.t==='signature')continue;
     let v=el.value.trim();if(f.t==='number'&&v!=='')v=Number(v);if(f.t==='email')v=v.toLowerCase();data[f.k]=v;
     if(f.req&&(v===''||v==null)){toast('برجاء إدخال: '+f.l);el.focus();return}}
   if(isTech()&&key==='logs')data.techId=ME.techId;
@@ -656,6 +682,11 @@ function submitForm(){
   if(key==='techs'&&data.email&&OWNER_EMAILS.includes(data.email)){toast('هذا بريد المدير، استخدم Gmail خاص بالفني');return}
   if(key==='jobs'&&'progress' in data&&data.progress!==''){data.progress=Math.max(0,Math.min(100,data.progress))}
   if(key==='jobs'&&data.status==='مكتمل')data.progress=100;
+  if(key==='visits'&&$('#f_signedName')){
+    if(newSig){data.signature=newSig;data.signedAt=new Date().toISOString()}
+    else if($('#f_sig_rm')?.checked){data.signature='';data.signedAt=''}
+    data.signedName=$('#f_signedName').value.trim();
+  }
   const upFile=$('#f_attachment')?.files?.[0],rmFile=$('#f_attach_rm')?.checked;
   const multi=[...($('#f_cam')?.files||[]),...($('#f_pick')?.files||[])],rmMulti=[...document.querySelectorAll('.f_rm:checked')].map(x=>x.value);
   if(multi.some(f=>!/^image\//.test(f.type)&&f.size>10*1024*1024)){toast('حجم الملف أكبر من 10 ميجا');return}
@@ -686,6 +717,7 @@ function submitForm(){
   }else if(rmFile&&obj.attachment){Files.del(obj.attachment.id);obj.attachment=null;put(key,obj)}
   if(rmMulti.length){rmMulti.forEach(fid=>{if(!isTech())Files.del(fid)});obj.attachments=(obj.attachments||[]).filter(a=>!rmMulti.includes(a.id));put(key,obj)}
   if(multi.length)uploadMany(key,obj,multi);
+  if(key==='visits'&&newSig)setTimeout(()=>showVisitReport(obj.id),350);
   if(key==='invoices'){oblRm.forEach(fid=>Files.del(fid));for(const k in oblNew)uploadOblig(obj,k,oblNew[k])}
   if(key==='techs'&&MODE==='cloud'){
     if(oldEmail&&oldEmail!==obj.email)Cloud.delUser(oldEmail);
@@ -789,6 +821,7 @@ const COLS={
   {h:'النوع',v:r=>esc(r.type)},{h:'الفني',v:r=>tName(r.techId)},
   {h:'الحالة',v:r=>badge(visitStatus(r))},
   {h:'أمر الشغل',s:r=>(r.attachments||[]).length,v:r=>(r.attachments||[]).length?`<div class="btns">${r.attachments.map((a,i)=>`<button class="btn att" onclick="openFile('${a.id}')" title="${esc(a.name)}">📎 ${r.attachments.length>1?i+1:'أمر الشغل'}</button>`).join('')}</div>`:'—'},
+  {h:'الإمضاء',s:r=>r.signature?1:0,v:r=>r.signature?`<button class="btn att" style="background:var(--green);border-color:var(--green)" onclick="showVisitReport('${r.id}')" title="${esc(r.signedName||'')}">✍️ موقّع${r.signedName?' — '+esc(r.signedName):''}</button>`:'<span class="muted small">—</span>'},
   {h:'',v:r=>act('visits',r.id,`${r.status!=='تمت'?`<button class="btn sm primary" onclick="quickDone('${r.id}')">✓ تمت</button>`:''}<button class="btn sm" onclick="printVisit('${r.id}')">🖨️</button>`)}],
  contracts:(withClient=true)=>[
   {h:'رقم العقد',v:r=>`<span class="ref">${esc(r.no)}</span>`},
@@ -1102,7 +1135,89 @@ function sendWA(techId){
 }
 
 /* visit report print */
-function printVisit(id){
+/* ===== customer signature pad ===== */
+const fmtDT=iso=>{if(!iso)return'';const d=new Date(iso),h=d.getHours(),mm=String(d.getMinutes()).padStart(2,'0');return fmt(iso2local(d))+' — '+((h%12)||12)+':'+mm+(h<12?' ص':' م')};
+const iso2local=d=>iso(d);
+function openSigPad(){
+  const c=cl($('#f_clientId')?.value)||{};const pad=document.createElement('div');pad.id='sigPad';pad.className='sigpad';
+  pad.innerHTML=`<div class="sig-top"><div><b>✍️ إمضاء العميل</b><div class="small muted">${esc(c.name||'')}${c.ref?' — '+esc(c.ref):''}</div></div><button type="button" class="x" onclick="closeSigPad()">×</button></div>
+   <div class="sig-area"><canvas id="sigCanvas"></canvas><div class="sig-hint">وقّع هنا بصباعك</div><div class="sig-base"></div></div>
+   <div class="sig-bot"><button type="button" class="btn" onclick="sigClear()">🧹 مسح</button><button type="button" class="btn" onclick="closeSigPad()">إلغاء</button><button type="button" class="btn primary" onclick="sigSave()">💾 حفظ الإمضاء</button></div>`;
+  document.body.appendChild(pad);document.body.style.overflow='hidden';
+  try{if(matchMedia('(max-width:900px)').matches&&pad.requestFullscreen)pad.requestFullscreen().catch(()=>{})}catch(e){}
+  const cv=$('#sigCanvas'),ctx=cv.getContext('2d');let drawing=false,last=null,box=null;SIG={cv,ctx,box:null};
+  const fit=()=>{const r=cv.getBoundingClientRect(),dpr=window.devicePixelRatio||1,old=SIG.box?cv.toDataURL():null;cv.width=Math.round(r.width*dpr);cv.height=Math.round(r.height*dpr);
+    ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#0b1a4a';ctx.lineWidth=2.6*dpr;if(old){SIG.box=null;pad.querySelector('.sig-hint').style.display=''}};
+  setTimeout(fit,30);SIG.fit=fit;window.addEventListener('resize',fit);
+  const pt=e=>{const r=cv.getBoundingClientRect(),dpr=cv.width/r.width;return{x:(e.clientX-r.left)*dpr,y:(e.clientY-r.top)*dpr}};
+  const grow=p=>{const b=SIG.box||{x0:p.x,y0:p.y,x1:p.x,y1:p.y};b.x0=Math.min(b.x0,p.x);b.y0=Math.min(b.y0,p.y);b.x1=Math.max(b.x1,p.x);b.y1=Math.max(b.y1,p.y);SIG.box=b};
+  cv.onpointerdown=e=>{e.preventDefault();cv.setPointerCapture(e.pointerId);drawing=true;last=pt(e);grow(last);ctx.beginPath();ctx.arc(last.x,last.y,ctx.lineWidth/2,0,7);ctx.fillStyle=ctx.strokeStyle;ctx.fill();pad.querySelector('.sig-hint').style.display='none'};
+  cv.onpointermove=e=>{if(!drawing)return;e.preventDefault();const evs=e.getCoalescedEvents?e.getCoalescedEvents():[e];for(const ev of evs){const p=pt(ev);const m={x:(last.x+p.x)/2,y:(last.y+p.y)/2};ctx.beginPath();ctx.moveTo(last.mx??last.x,last.my??last.y);ctx.quadraticCurveTo(last.x,last.y,m.x,m.y);ctx.stroke();last={x:p.x,y:p.y,mx:m.x,my:m.y};grow(p)}};
+  cv.onpointerup=cv.onpointercancel=()=>{drawing=false;last=null};
+}
+let SIG=null;
+function sigClear(){if(!SIG)return;SIG.ctx.clearRect(0,0,SIG.cv.width,SIG.cv.height);SIG.box=null;const h=document.querySelector('#sigPad .sig-hint');if(h)h.style.display=''}
+function closeSigPad(){const p=$('#sigPad');if(p)p.remove();document.body.style.overflow='';if(SIG)window.removeEventListener('resize',SIG.fit);SIG=null;try{if(document.fullscreenElement)document.exitFullscreen()}catch(e){}}
+function sigSave(){
+  if(!SIG||!SIG.box)return toast('برجاء التوقيع أولاً');
+  const b=SIG.box,pd=24*(window.devicePixelRatio||1),x=Math.max(0,b.x0-pd),y=Math.max(0,b.y0-pd),w=Math.min(SIG.cv.width,b.x1+pd)-x,h=Math.min(SIG.cv.height,b.y1+pd)-y;
+  const k=Math.min(1,700/w),out=document.createElement('canvas');out.width=Math.round(w*k);out.height=Math.round(h*k);const o=out.getContext('2d');
+  o.fillStyle='#fff';o.fillRect(0,0,out.width,out.height);o.drawImage(SIG.cv,x,y,w,h,0,0,out.width,out.height);
+  const url=out.toDataURL('image/png');if(formCtx)formCtx.sig=url;
+  const pv=$('#sigPrev');if(pv)pv.innerHTML=`<img src="${url}" class="sigimg" alt="إمضاء العميل"><div class="small" style="color:var(--green-d)">✅ تم التوقيع — اضغط "حفظ" لحفظ الزيارة</div>`;
+  closeSigPad();toast('تم حفظ الإمضاء ✅ — اضغط حفظ الزيارة');
+}
+
+/* ===== visit report (maintenance order) ===== */
+function visitReportHTML(v){
+  const c=cl(v.clientId)||{},k=byId('contracts',v.contractId),t=tech(v.techId),box=(lbl,txt,mh)=>`<div class="rep-sec">${lbl}</div><div class="box" style="min-height:${mh||60}px">${esc(txt||'')}</div>`;
+  return`<div class="rep" id="repDoc"><div class="rep-head"><img src="${LOGO}"><div style="text-align:left;font-size:12.5px;line-height:1.7"><bdi dir="ltr">${esc(db.settings.companyEn||'Delta Trading Co.')}</bdi><br><span dir="ltr">${esc(db.settings.email)}</span>${db.settings.phone?'<br><span dir="ltr">'+esc(db.settings.phone)+'</span>':''}</div></div>
+  <h2>تقرير زيارة صيانة<br><span style="font-size:13px;color:#666;font-weight:600">Maintenance Visit Report</span></h2>
+  <table class="rep-t"><tr><th>رقم الزيارة</th><td class="ref">${esc(v.no)}</td><th>التاريخ</th><td>${dayName(v.date)} ${fmt(v.date)}${v.time?' — '+esc(v.time):''}</td></tr>
+  <tr><th>العميل</th><td>${esc(c.name||'')}</td><th>كود العميل</th><td class="ref">${esc(c.ref||'')}</td></tr>
+  <tr><th>العنوان</th><td>${esc(c.address||c.area||'')}</td><th>المسؤول</th><td>${esc(c.contact||'')}${c.phone?' — <span dir="ltr">'+esc(c.phone)+'</span>':''}</td></tr>
+  <tr><th>العقد</th><td>${k?`<span class="ref">${esc(k.no)}</span> ${esc(k.title)}`:(v.contractId?'—':'بدون عقد')}</td><th>نوع الزيارة</th><td>${esc(v.type||'')}</td></tr>
+  <tr><th>الفني</th><td>${t?esc(t.name):'—'}</td><th>الحالة</th><td>${esc(v.status||'')}</td></tr></table>
+  ${k&&k.units?box('الأجهزة المشمولة بالعقد',k.units,36):''}
+  ${box('الأعمال المنفذة',v.work,90)}${box('قطع الغيار / الخامات المستخدمة',v.parts,45)}${box('ملاحظات وتوصيات',v.notes,45)}
+  ${(v.attachments||[]).length?`<div class="small" style="margin:-4px 0 10px">📎 مرفق: ${v.attachments.length} صورة/ملف (أمر الشغل)</div>`:''}
+  <div class="sign2"><div class="sigcol"><div class="rep-sec">توقيع العميل</div><div class="sigbox">${v.signature?`<img src="${v.signature}" alt="إمضاء العميل">`:''}</div>
+   <div class="small">الاسم: <b>${esc(v.signedName||'')}</b></div><div class="small">تاريخ ووقت التوقيع: <b>${v.signedAt?fmtDT(v.signedAt):''}</b></div></div>
+   <div class="sigcol"><div class="rep-sec">الفني</div><div class="sigbox"></div><div class="small">الاسم: <b>${t?esc(t.name):''}</b></div></div></div>
+  <div class="rep-foot">صدر بتاريخ ${fmtDT(new Date().toISOString())} — <bdi dir="ltr">${esc(db.settings.companyEn||'Delta Trading Co.')}</bdi></div></div>`;
+}
+function showVisitReport(id){
+  const v=byId('visits',id);if(!v)return;closeReport();
+  const w=document.createElement('div');w.id='repView';w.className='repview';
+  w.innerHTML=`<div class="rep-bar no-print"><b>📄 تقرير الزيارة ${esc(v.no)}</b><div class="btns"><button class="btn" onclick="printReport()">🖨️ طباعة</button><button class="btn navy" onclick="reportPdf('save')">📄 حفظ PDF</button><button class="btn wa" onclick="reportPdf('wa')">🟢 إرسال واتساب</button>${v.signature?'':`<button class="btn primary" onclick="closeReport();openForm('visits','${v.id}')">✍️ إمضاء العميل</button>`}<button class="btn" onclick="closeReport()">إغلاق</button></div></div><div class="rep-paper">${visitReportHTML(v)}</div>`;
+  w.dataset.vid=id;document.body.appendChild(w);document.body.style.overflow='hidden';
+}
+function closeReport(){const w=$('#repView');if(w)w.remove();document.body.style.overflow=''}
+function printReport(){const d=$('#repDoc');if(!d)return;$('#printArea').innerHTML=d.outerHTML;document.body.classList.add('print-single');window.print();setTimeout(()=>document.body.classList.remove('print-single'),600)}
+function loadScript(u){return new Promise((res,rej)=>{if(document.querySelector(`script[src="${u}"]`))return res();const sc=document.createElement('script');sc.src=u;sc.onload=res;sc.onerror=rej;document.head.appendChild(sc)})}
+async function reportPdf(mode){
+  const id=$('#repView')?.dataset.vid,v=byId('visits',id),c=cl(v?.clientId)||{};if(!v)return;
+  toast('جاري تجهيز ملف PDF...');
+  try{
+    await loadScript('libs/html2canvas.min.js');
+    await loadScript('libs/jspdf.umd.min.js');
+    const wrap=document.createElement('div');wrap.style.cssText='position:fixed;top:0;left:-12000px;width:794px;padding:26px 30px;background:#fff;direction:rtl;z-index:-1';
+    wrap.innerHTML=$('#repDoc').outerHTML;wrap.firstElementChild.removeAttribute('id');document.body.appendChild(wrap);
+    let cnv;try{cnv=await html2canvas(wrap,{scale:2,backgroundColor:'#ffffff',useCORS:true,windowWidth:1100})}finally{wrap.remove()}
+    const {jsPDF}=window.jspdf,pdf=new jsPDF({orientation:'p',unit:'mm',format:'a4'}),W=210,H=297,m=8,iw=W-2*m,ih=cnv.height*iw/cnv.width,img=cnv.toDataURL('image/jpeg',0.92);
+    if(ih<=H-2*m)pdf.addImage(img,'JPEG',m,m,iw,ih);
+    else if(ih<=(H-2*m)*1.3){const fh=H-2*m,fw=iw*fh/ih;pdf.addImage(img,'JPEG',(W-fw)/2,m,fw,fh)}
+    else{const ph=(H-2*m)*cnv.width/iw;for(let y=0,pg=0;y<cnv.height;y+=ph,pg++){const part=document.createElement('canvas');part.width=cnv.width;part.height=Math.min(ph,cnv.height-y);part.getContext('2d').drawImage(cnv,0,y,cnv.width,part.height,0,0,cnv.width,part.height);if(pg)pdf.addPage();pdf.addImage(part.toDataURL('image/jpeg',0.92),'JPEG',m,m,iw,part.height*iw/cnv.width)}}
+    const name=`تقرير زيارة ${v.no.replace(/\//g,'-')}.pdf`,blob=pdf.output('blob'),file=new File([blob],name,{type:'application/pdf'});
+    const msg=`السلام عليكم ${c.contact||''}\nمرفق تقرير زيارة الصيانة رقم ${v.no} بتاريخ ${fmt(v.date)}${c.name?' — '+c.name:''}\n${db.settings.companyEn||'Delta Trading Co.'}`;
+    if(mode==='wa'&&navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file],title:name,text:msg});return}catch(e){if(e.name==='AbortError')return}}
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500);
+    if(mode==='wa'){toast('تم تنزيل ملف PDF — أرفقه في محادثة الواتساب');const n=waNum(c.phone);setTimeout(()=>window.open(n?`https://wa.me/${n}?text=${encodeURIComponent(msg)}`:`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank'),600)}
+    else toast('تم حفظ ملف PDF ✅');
+  }catch(e){console.error(e);toast('تعذّر إنشاء PDF — هيفتح الطباعة، اختار "Save as PDF"');printReport()}
+}
+function printVisit(id){showVisitReport(id)}
+function printVisitOld(id){
   const v=byId('visits',id);if(!v)return;const c=cl(v.clientId)||{},k=byId('contracts',v.contractId);
   $('#printArea').innerHTML=`<div class="rep"><div class="rep-head"><img src="${LOGO}"><div style="text-align:left;font-size:13px">${esc(db.settings.companyEn)}<br>${esc(db.settings.email)}<br>${esc(db.settings.phone)}</div></div>
   <h2>تقرير زيارة صيانة</h2>

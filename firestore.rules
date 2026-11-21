@@ -75,7 +75,7 @@ service cloud.firestore {
       allow read: if isManager() || isTech();
       allow create, delete: if isManager();
       allow update: if isManager() || (isTech() && resource.data.techId == myTech()
-                    && onlyChanged(['status', 'work', 'parts', 'notes', 'attachments', 'updatedAt', 'updatedBy']));
+                    && onlyChanged(['status', 'work', 'parts', 'notes', 'attachments', 'signature', 'signedName', 'signedAt', 'updatedAt', 'updatedBy']));
     }
 
     // الأعمال: الفني يضيف أعمالاً جديدة ويتابع أعماله (بدون القيمة المالية)، والحذف للمدير فقط
