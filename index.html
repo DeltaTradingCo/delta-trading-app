@@ -1063,7 +1063,7 @@ const leadOpen=l=>!['تم البيع ✅','مرفوض ❌'].includes(l.stage||'�
 const leadDue=l=>leadOpen(l)&&l.nextDate&&l.nextDate<=today();
 const leadsDue=()=>(db.leads||[]).filter(leadDue);
 const CADENCE=[2,3,5,20,30];               // يوم 0 ← 2 ← 5 ← 10 ← 30 ← كل شهر
-const SDEF={offer:'احجز صيانة الصيف من دلوقتي، وزيارة المعاينة مجاناً',callTarget:20,rep:'',
+const SDEF={offer:'احجز صيانة الصيف من دلوقتي، وزيارة المعاينة مجاناً',callTarget:15,rep:'',
   script:'صباح الخير، معاك {اسمي} من Delta Trading Co. إحنا بنعمل عقود صيانة تكييفات لـ{النوع} في {المنطقة}. أغلب عملائنا بيحجزوا قبل الصيف عشان يتفادوا الأعطال. ممكن أبعت لحضرتك بروفايل الشركة على واتساب ونحدد زيارة معاينة مجانية؟',
   t0:'أهلاً أستاذ {المسؤول}، معاك {اسمي} من Delta Trading Co. زي ما اتكلمنا، ده بروفايل الشركة 👇\nإحنا متخصصين في صيانة وتوريد التكييفات ومعدات المغاسل. يسعدنا نحدد لحضرتك زيارة معاينة مجانية، يناسبك يوم إيه؟',
   t2:'أهلاً أستاذ {المسؤول} 👋 حضرتك لحقت تطّلع على بروفايل Delta Trading Co.؟ لو عندك أي سؤال أنا موجود.',
@@ -1071,6 +1071,8 @@ const SDEF={offer:'احجز صيانة الصيف من دلوقتي، وزيار
   t10:'أستاذ {المسؤول}، عندنا عرض الشهر ده: {العرض}. تحب نحجز لـ{الجهة} معاينة الأسبوع ده؟',
   t30:'أهلاً أستاذ {المسؤول}، بطمن على حضرتك 🙏 لو {الجهة} محتاجة أي حاجة في التكييفات أو الصيانة إحنا تحت أمرك. Delta Trading Co.'};
 const TPL_NAMES=[['t0','اليوم 0 — البروفايل بعد المكالمة'],['t2','اليوم 2 — لحقت تشوف البروفايل؟'],['t5','اليوم 5 — نصيحة مفيدة'],['t10','اليوم 10 — عرض / معاينة مجانية'],['t30','اليوم 30 — اطمئنان شهري']];
+// مواعيد المكالمات: من ١٠:٠٠ لـ ١٢:٠٠ (يوم العمل ٩–٣، أول ساعة وآخر نص ساعة فاضيين)؛ اللي يزيد عن الهدف يتأجل لبعد الضهر ١–٢:٣٠
+function callSlot(i,target){const n=Math.max(1,target||15),step=Math.max(5,Math.floor(120/n));let m=i<n?600+i*step:780+(i-n)*step;if(m>=870)return'بكرة';return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')}
 const sset=()=>({...SDEF,...(db.settings.sales||{})});
 function fillTpl(t,l){const s=sset();return String(t||'').replace(/\{اسمي\}/g,s.rep||'فريق المبيعات').replace(/\{المسؤول\}/g,l.contact||'').replace(/\{الجهة\}/g,l.name||'').replace(/\{النوع\}/g,l.segment||'الشركات').replace(/\{المنطقة\}/g,l.area||'منطقتكم').replace(/\{العرض\}/g,s.offer||'').replace(/أستاذ \s*([،,])/g,'حضرتك$1').replace(/أستاذ \s+👋/,'👋')}
 const contactDays=l=>new Set((l.acts||[]).map(a=>a.at.slice(0,10))).size;
@@ -1159,7 +1161,7 @@ function importLeads(){
 }
 function saveSalesSettings(){
   const s={...sset()};['offer','rep','script',...TPL_NAMES.map(x=>x[0])].forEach(k=>{const el=$('#ss_'+k);if(el)s[k]=el.value});
-  s.callTarget=Number($('#ss_callTarget').value)||20;db.settings.sales=s;putSettings();toast('تم الحفظ ✅');render();
+  s.callTarget=Number($('#ss_callTarget').value)||15;db.settings.sales=s;putSettings();toast('تم الحفظ ✅');render();
 }
 function viewSales(){
   const tab=ui.salesTab||'today',t=today(),s=sset(),L=db.leads||[];
@@ -1184,8 +1186,8 @@ function viewSales(){
      <div class="stats"><div class="stat ${calls>=s.callTarget?'':'amber'}"><div class="n">${calls} / ${s.callTarget}</div><div class="l">📞 مكالمات النهارده</div><div class="prog" style="width:100%;margin-top:6px"><i style="width:${Math.min(100,calls/s.callTarget*100)}%"></i></div></div>
       <div class="stat blue"><div class="n">${wa}</div><div class="l">🟢 رسايل واتساب النهارده</div></div><div class="stat red"><div class="n">${due.length}</div><div class="l">🔴 متابعات مستحقة</div></div>
       <div class="stat navy" onclick="ui.salesTab='leads';ui.leads_due='new';render()"><div class="n">${L.filter(l=>!(l.acts||[]).length).length}</div><div class="l">لسه ما اتكلموش</div></div></div>
-     <div class="card"><h2>📅 خطة النهارده — ${dayName(t)}</h2><div>${esc(plan)}</div><div class="small muted" style="margin-top:6px">٩:٣٠ رسايل · ١٠–١٢ مكالمات (${s.callTarget} مكالمة) · ١٢–١ متابعة واتساب · ١–٢ لينكدإن · ٢–٣ عروض أسعار ومواعيد · ٨–١٠ م بوستات</div></div>
-     <div class="card"><h2>🔴 كلّم دول النهارده (${due.length})</h2>${due.length?due.map(l=>`<div class="list-item"><div><div class="t">${esc(l.name)} <span class="badge ${STAGE_BADGE[l.stage||'جديد']||''}">${esc(l.stage||'جديد')}</span></div><div class="small muted">${l.contact?'👤 '+esc(l.contact)+' · ':''}${l.phone?esc(l.phone)+' · ':''}${l.nextDate<t?'<b style="color:var(--red)">متأخرة من '+fmt(l.nextDate)+'</b>':'النهارده'}${lastAct(l)?' · آخر تواصل: '+esc(lastAct(l).result):''}</div></div>
+     <div class="card"><h2>📅 خطة النهارده — ${dayName(t)}</h2><div>${esc(plan)}</div><div class="small muted" style="margin-top:6px">🕘 يوم العمل ٩–٣ · ٩–١٠ مفيش حاجة · <b>١٠–١٢ مكالمات (${s.callTarget} مكالمة)</b> · ١٢–١ متابعة واتساب · ١–٢ عروض أسعار ومواعيد · ٢–٢:٣٠ لينكدإن وتسجيل النتايج · ٢:٣٠–٣ مفيش حاجة</div></div>
+     <div class="card"><h2>🔴 كلّم دول النهارده (${due.length})</h2>${due.length?due.map((l,i)=>`<div class="list-item"><div><div class="t"><span class="badge" style="font-variant-numeric:tabular-nums">⏰ ${callSlot(i,s.callTarget)}</span> ${esc(l.name)} <span class="badge ${STAGE_BADGE[l.stage||'جديد']||''}">${esc(l.stage||'جديد')}</span></div><div class="small muted">${l.contact?'👤 '+esc(l.contact)+' · ':''}${l.phone?esc(l.phone)+' · ':''}${l.nextDate<t?'<b style="color:var(--red)">متأخرة من '+fmt(l.nextDate)+'</b>':'النهارده'}${lastAct(l)?' · آخر تواصل: '+esc(lastAct(l).result):''}</div></div>
        <div class="btns">${l.phone?`<a class="btn sm" href="tel:${esc(l.phone)}" onclick="setTimeout(()=>logContact('${l.id}','مكالمة'),800)">📞 اتصال</a>`:''}<button class="btn sm primary" onclick="logContact('${l.id}','مكالمة')">سجّل</button><button class="btn sm wa" onclick="leadWA('${l.id}')">🟢</button></div></div>`).join(''):'<div class="muted small">مفيش متابعات مستحقة 👍 — ضيف قائمة جديدة من "📥 استيراد قائمة"</div>'}</div>`;
   }
   if(tab==='import'){
