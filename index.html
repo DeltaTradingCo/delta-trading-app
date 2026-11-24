@@ -300,7 +300,7 @@ const TECH_ADD=['clients','jobs','logs'];
 const techOwns=x=>x.techId===ME.techId||x.createdBy===ME.email;
 const TECH_HIDE={jobs:['value']};
 const blank=()=>({settings:{company:'Delta Trading Co.',companyEn:'Delta Trading Co.',email:'deltatradingco.eg@gmail.com',phone:'',address:'',prefix:'CH',startSeq:1,prefixL:'CL',startSeqL:1,lastBackup:''},
-  clients:[],techs:[],contracts:[],visits:[],jobs:[],logs:[],invoices:[],jobPrices:[],letters:[],quotes:[]});
+  clients:[],techs:[],contracts:[],visits:[],jobs:[],logs:[],invoices:[],jobPrices:[],letters:[],quotes:[],leads:[]});
 let db;
 function load(){try{const s=localStorage.getItem(KEY);db=s?JSON.parse(s):blank()}catch(e){db=blank()}
   const b=blank();for(const k in b){if(!(k in db))db[k]=b[k]}db.settings={...b.settings,...db.settings};fixName()}
@@ -688,6 +688,7 @@ function submitForm(){
       const nf=[...($('#ob_'+k+'_cam').files||[]),...($('#ob_'+k+'_pick').files||[])];if(nf.length)oblNew[k]=nf;
     }
   }
+  if(key==='clients'&&!id&&ui.pendingLead){const pl=ui.pendingLead;ui.pendingLead=null;setTimeout(()=>{const l=byId('leads',pl),c=db.clients[db.clients.length-1];if(l&&c){l.clientId=c.id;put('leads',l);render()}},50)}
   if(key==='jobs'&&!id&&ui.pendingQuote){const pq=ui.pendingQuote;ui.pendingQuote=null;setTimeout(()=>{const q=byId('quotes',pq),j=db.jobs[db.jobs.length-1];if(q&&j){q.jobId=j.id;put('quotes',q);render()}},50)}
   if(key==='letters'&&!data.letterNo)data.letterNo=nextLetterNo();
   if(key==='quotes'){if(!data.refNo)data.refNo=nextQuoteNo();if((db.quotes||[]).some(x=>x.id!==id&&String(x.refNo).trim()===String(data.refNo).trim())){toast('رقم المرجع مسجل من قبل');return}
@@ -915,15 +916,15 @@ function startSideRz(e){e.preventDefault();const sd=document.querySelector('.sid
 function resetSideW(){try{localStorage.removeItem('delta_sidew')}catch(_){}applySideW()}
 window.addEventListener('resize',applySideW);
 try{ui.sort=JSON.parse(localStorage.getItem('delta_sort')||'{}')||{}}catch(e){ui.sort={}}
-const NAV=[['dashboard','🏠','الرئيسية'],['daily','📋','المتابعة اليومية'],['clients','👥','العملاء'],['contracts','📄','العقود'],['invoices','🧾','الفواتير'],['quotes','💼','عروض الأسعار'],['letters','✉️','الخطابات الصادرة'],
+const NAV=[['dashboard','🏠','الرئيسية'],['daily','📋','المتابعة اليومية'],['clients','👥','العملاء'],['contracts','📄','العقود'],['invoices','🧾','الفواتير'],['sales','📈','Sales & Marketing'],['quotes','💼','عروض الأسعار'],['letters','✉️','الخطابات الصادرة'],
  ['visits','🔧','زيارات الصيانة'],['jobs','🏗️','الأعمال الجارية والجديدة'],['logs','📝','سجل الأعمال اليومية'],['techs','👷','الفنيين'],['settings','⚙️','الإعدادات والنسخ']];
 const NAV_TECH=[['daily','📋','مهامي اليومية'],['clients','👥','العملاء'],['jobs','🏗️','الأعمال'],['visits','🔧','زياراتي'],['logs','📝','سجل أعمالي']];
 function renderNav(page){
   const mine=x=>!isTech()||x.techId===ME.techId;
-  const late=db.visits.filter(v=>visitStatus(v)==='متأخرة'&&mine(v)).length,expN=isTech()?0:expiringContracts().length,letN=isTech()?0:lettersDue().length,qN=isTech()?0:quotesDue().length;
+  const late=db.visits.filter(v=>visitStatus(v)==='متأخرة'&&mine(v)).length,expN=isTech()?0:expiringContracts().length,letN=isTech()?0:lettersDue().length,salN=isTech()?0:leadsDue().length,qN=isTech()?0:quotesDue().length;
   $('#userM').innerHTML=ME&&MODE==='cloud'?`${ME.photo?`<img src="${esc(ME.photo)}" style="width:28px;height:28px;border-radius:50%" referrerpolicy="no-referrer">`:''}<span>${esc((ME.name||ME.email).split(' ')[0])}<br><a href="#" onclick="if(confirm('تسجيل الخروج؟'))Cloud.logout();return false">خروج</a></span>`:'';
   const who=ME&&MODE==='cloud'?`<div class="who" style="padding:8px 12px;border-top:1px solid rgba(255,255,255,.08);margin-top:8px;font-size:13px;color:#cfd4ea">${ME.photo?`<img src="${esc(ME.photo)}" style="width:26px;height:26px;border-radius:50%;vertical-align:middle;margin-inline-end:6px" referrerpolicy="no-referrer">`:''}${esc(ME.name||ME.email)}<br><span class="small" style="color:#9aa1c2">${isTech()?'فني':'مدير'} · <span dir="ltr">${esc(ME.email)}</span></span><br><a href="#" onclick="Cloud.logout();return false" style="color:#9fd36a">تسجيل الخروج</a></div>`:'';
-  $('#nav').innerHTML=(isTech()?NAV_TECH:NAV).map(([k,i,l])=>`<a href="#/${k}" class="${page===k||(page==='client'&&k==='clients')?'on':''}"><span class="ic">${i}</span>${l}${k==='visits'&&late?`<span class="cnt">${late}</span>`:''}${k==='quotes'&&qN?`<span class="cnt">${qN}</span>`:''}${k==='letters'&&letN?`<span class="cnt">${letN}</span>`:''}${k==='contracts'&&expN?`<span class="cnt" style="background:var(--amber)">${expN}</span>`:''}</a>`).join('')+who;
+  $('#nav').innerHTML=(isTech()?NAV_TECH:NAV).map(([k,i,l])=>`<a href="#/${k}" class="${page===k||(page==='client'&&k==='clients')?'on':''}"><span class="ic">${i}</span>${l}${k==='visits'&&late?`<span class="cnt">${late}</span>`:''}${k==='sales'&&salN?`<span class="cnt">${salN}</span>`:''}${k==='quotes'&&qN?`<span class="cnt">${qN}</span>`:''}${k==='letters'&&letN?`<span class="cnt">${letN}</span>`:''}${k==='contracts'&&expN?`<span class="cnt" style="background:var(--amber)">${expN}</span>`:''}</a>`).join('')+who;
   const sw=[['','الكل'],['hvac','❄️ HVAC'],['laundry','🧺 Laundry']].map(([k,l])=>`<button class="${ui0.div===k?'on':''}" onclick="setDiv('${k}')">${l}</button>`).join('');
   $('#divSide').innerHTML=sw;$('#divTop').innerHTML=sw;
   $('#sideFoot').innerHTML=esc(db.settings.email);
@@ -955,6 +956,7 @@ function viewDashboard(){
    <div class="stat" onclick="location.hash='#/contracts'"><div class="n">${active.length}</div><div class="l">عقود سارية</div></div>
    <div class="stat blue" onclick="location.hash='#/daily'"><div class="n">${vToday.length}</div><div class="l">زيارات اليوم</div></div>
    <div class="stat red" onclick="ui.visits_status='متأخرة';location.hash='#/visits'"><div class="n">${late.length}</div><div class="l">زيارات متأخرة</div></div>
+   ${leadsDue().length?`<div class="stat red" onclick="ui.salesTab='today';location.hash='#/sales'"><div class="n">${leadsDue().length}</div><div class="l">📈 متابعات مبيعات النهارده</div></div>`:''}
    ${quotesDue().length?`<div class="stat red" onclick="ui.quotes_st='due';location.hash='#/quotes'"><div class="n">${quotesDue().length}</div><div class="l">💼 عروض أسعار متابعتها مستحقة</div></div>`:''}
    ${lettersDue().length?`<div class="stat red" onclick="ui.letters_st='due';location.hash='#/letters'"><div class="n">${lettersDue().length}</div><div class="l">✉️ خطابات متابعتها مستحقة</div></div>`:''}
    ${(()=>{const up=db.invoices.filter(r=>oblUnpaid(r).length),us=db.invoices.filter(r=>oblUnsub(r).length);return up.length||us.length?`<div class="stat amber" onclick="ui.invoices_obl='${up.length?'unpaid':'unsub'}';ui.invoices_pay='';location.hash='#/invoices'"><div class="n" style="font-size:22px">${up.length} / ${us.length}</div><div class="l">قوى عاملة وتأمينات: لم تُدفع / لم تُسلّم للعميل</div></div>`:''})()}
@@ -1052,6 +1054,172 @@ function quoteToJob(id){const q=byId('quotes',id);if(!q)return;ui.pendingQuote=i
 function quoteStats(list){const tot=list.reduce((a,r)=>a+(Number(r.amount)||0),0),acc=list.filter(r=>r.qstatus==='مقبول ✅'),accV=acc.reduce((a,r)=>a+(Number(r.amount)||0),0),
   decided=list.filter(r=>['مقبول ✅','مرفوض'].includes(r.qstatus)).length,open=list.filter(quoteOpen),openV=open.reduce((a,r)=>a+(Number(r.amount)||0),0),due=list.filter(quoteDue).length;
   return`<div class="stats" style="margin-bottom:12px"><div class="stat navy"><div class="n" style="font-size:22px">${money(tot)}</div><div class="l">إجمالي العروض (${list.length})</div></div><div class="stat amber"><div class="n" style="font-size:22px">${money(openV)}</div><div class="l">عروض مفتوحة (${open.length})</div></div><div class="stat"><div class="n" style="font-size:22px">${money(accV)}</div><div class="l">المقبول (${acc.length}) — نسبة القبول ${decided?Math.round(acc.length/decided*100):0}%</div></div>${due?`<div class="stat red"><div class="n">${due}</div><div class="l">متابعة مستحقة الآن</div></div>`:''}</div>`}
+/* ===================== Sales & Marketing (manager only) ===================== */
+const SEGMENTS=['مستشفى','فندق','مصنع','مدرسة / جامعة','شركة / مكاتب','كمبوند / مبنى جديد','مقاول','مغسلة تجارية','سكني / فرد','أخرى'];
+const SOURCES=['مكالمة (قائمة Google Maps)','واتساب','فيسبوك','إنستجرام','لينكدإن','ترشيح من عميل','زيارة / معرفة شخصية','أخرى'];
+const STAGES=['جديد','تم التواصل','أُرسل البروفايل','معاينة محجوزة','عرض سعر مُرسل','تفاوض','تم البيع ✅','مرفوض ❌','مؤجل'];
+const STAGE_BADGE={'جديد':'b-blue','تم التواصل':'b-blue','أُرسل البروفايل':'b-amber','معاينة محجوزة':'b-amber','عرض سعر مُرسل':'b-amber','تفاوض':'b-amber','تم البيع ✅':'b-green','مرفوض ❌':'b-red','مؤجل':''};
+const leadOpen=l=>!['تم البيع ✅','مرفوض ❌'].includes(l.stage||'جديد');
+const leadDue=l=>leadOpen(l)&&l.nextDate&&l.nextDate<=today();
+const leadsDue=()=>(db.leads||[]).filter(leadDue);
+const CADENCE=[2,3,5,20,30];               // يوم 0 ← 2 ← 5 ← 10 ← 30 ← كل شهر
+const SDEF={offer:'احجز صيانة الصيف من دلوقتي، وزيارة المعاينة مجاناً',callTarget:20,rep:'',
+  script:'صباح الخير، معاك {اسمي} من Delta Trading Co. إحنا بنعمل عقود صيانة تكييفات لـ{النوع} في {المنطقة}. أغلب عملائنا بيحجزوا قبل الصيف عشان يتفادوا الأعطال. ممكن أبعت لحضرتك بروفايل الشركة على واتساب ونحدد زيارة معاينة مجانية؟',
+  t0:'أهلاً أستاذ {المسؤول}، معاك {اسمي} من Delta Trading Co. زي ما اتكلمنا، ده بروفايل الشركة 👇\nإحنا متخصصين في صيانة وتوريد التكييفات ومعدات المغاسل. يسعدنا نحدد لحضرتك زيارة معاينة مجانية، يناسبك يوم إيه؟',
+  t2:'أهلاً أستاذ {المسؤول} 👋 حضرتك لحقت تطّلع على بروفايل Delta Trading Co.؟ لو عندك أي سؤال أنا موجود.',
+  t5:'نصيحة سريعة من Delta Trading Co. 💡 التكييف اللي بيعمل صوت عالي أو التبريد بتاعه ضعيف أو بيسرّب مياه، محتاج صيانة قبل الصيف عشان يتجنب الأعطال المكلفة. لو حابب نعمل فحص مجاني لـ{الجهة} قولّي.',
+  t10:'أستاذ {المسؤول}، عندنا عرض الشهر ده: {العرض}. تحب نحجز لـ{الجهة} معاينة الأسبوع ده؟',
+  t30:'أهلاً أستاذ {المسؤول}، بطمن على حضرتك 🙏 لو {الجهة} محتاجة أي حاجة في التكييفات أو الصيانة إحنا تحت أمرك. Delta Trading Co.'};
+const TPL_NAMES=[['t0','اليوم 0 — البروفايل بعد المكالمة'],['t2','اليوم 2 — لحقت تشوف البروفايل؟'],['t5','اليوم 5 — نصيحة مفيدة'],['t10','اليوم 10 — عرض / معاينة مجانية'],['t30','اليوم 30 — اطمئنان شهري']];
+const sset=()=>({...SDEF,...(db.settings.sales||{})});
+function fillTpl(t,l){const s=sset();return String(t||'').replace(/\{اسمي\}/g,s.rep||'فريق المبيعات').replace(/\{المسؤول\}/g,l.contact||'').replace(/\{الجهة\}/g,l.name||'').replace(/\{النوع\}/g,l.segment||'الشركات').replace(/\{المنطقة\}/g,l.area||'منطقتكم').replace(/\{العرض\}/g,s.offer||'').replace(/أستاذ \s*([،,])/g,'حضرتك$1').replace(/أستاذ \s+👋/,'👋')}
+const contactDays=l=>new Set((l.acts||[]).map(a=>a.at.slice(0,10))).size;
+const nextByCadence=l=>addDays(today(),CADENCE[Math.min(Math.max(contactDays(l)-1,0),CADENCE.length-1)]);
+const leadStep=l=>Math.min(contactDays(l),TPL_NAMES.length-1);
+const lastAct=l=>(l.acts||[]).slice(-1)[0];
+const weekStart=d=>{const x=parse(d);x.setDate(x.getDate()-x.getDay());return iso(x)};
+const actsAll=()=>(db.leads||[]).flatMap(l=>(l.acts||[]).map(a=>({...a,lead:l})));
+
+ENT.leads={one:'عميل محتمل',fields:[
+  {k:'name',l:'اسم الجهة / العميل',req:1,full:1,ph:'مثال: مستشفى النور التخصصي'},
+  {k:'segment',l:'النوع',t:'select',opts:SEGMENTS},
+  {k:'division',l:'القسم',t:'select',opts:[['hvac','❄️ HVAC'],['laundry','🧺 Laundry']]},
+  {k:'contact',l:'اسم المسؤول'},{k:'contactTitle',l:'الوظيفة',ph:'مدير الصيانة / المهندس المسؤول'},
+  {k:'phone',l:'الموبايل / واتساب',t:'tel'},{k:'phone2',l:'تليفون آخر',t:'tel'},
+  {k:'area',l:'المنطقة'},{k:'source',l:'جالك منين؟',t:'select',opts:SOURCES},
+  {k:'stage',l:'المرحلة',t:'select',opts:STAGES},{k:'nextDate',l:'📅 المتابعة القادمة',t:'date'},
+  {k:'value',l:'قيمة متوقعة (ج.م)',t:'number'},
+  {k:'notes',l:'ملاحظات',t:'textarea',full:1}],
+  defaults:()=>({segment:'شركة / مكاتب',division:ui0.div||'hvac',source:'مكالمة (قائمة Google Maps)',stage:'جديد',nextDate:today()})};
+
+COLS.leads=()=>[
+  {h:'الجهة',s:r=>r.name,v:r=>`<b>${esc(r.name)}</b>${r.clientId&&cl(r.clientId)?` <a href="#/client/${r.clientId}" class="ref small">${esc(cl(r.clientId).ref)}</a>`:''}<br><span class="small muted">${esc(r.segment||'')}${r.area?' · '+esc(r.area):''}</span>${r.contact?`<br><span class="small">👤 ${esc(r.contact)}${r.contactTitle?' — '+esc(r.contactTitle):''}</span>`:''}`},
+  {h:'التليفون',v:r=>r.phone?telLink(r.phone):'—'},
+  {h:'المصدر',s:r=>r.source||'',v:r=>`<span class="small">${esc(r.source||'')}</span>`},
+  {h:'المرحلة',s:r=>STAGES.indexOf(r.stage||'جديد'),v:r=>`<span class="badge ${STAGE_BADGE[r.stage||'جديد']||''}">${esc(r.stage||'جديد')}</span>`},
+  {h:'آخر تواصل',s:r=>(lastAct(r)||{}).at||'',v:r=>{const a=lastAct(r);return a?`${fmt(a.at.slice(0,10))}<br><span class="small muted">${esc(a.type)} — ${esc(a.result||'')}</span>${a.note?`<br><span class="small muted">${esc(a.note)}</span>`:''}`:'<span class="muted small">لم يتم التواصل</span>'}},
+  {h:'المتابعة',cls:'nowrap',s:r=>leadOpen(r)?(r.nextDate||'9999'):'~',v:r=>r.nextDate&&leadOpen(r)?(()=>{const d=Math.round((parse(r.nextDate)-parse(today()))/864e5);return`${fmt(r.nextDate)}<br><b class="small" style="color:${d<=0?'var(--red)':d<=2?'var(--amber)':'var(--muted)'}">${d<0?'متأخرة '+(-d)+' يوم':d===0?'النهارده':'بعد '+d+' يوم'}</b>`})():'—'},
+  {h:'',v:r=>`<div class="btns no-print">${leadOpen(r)?`<button class="btn sm primary" onclick="logContact('${r.id}','مكالمة')">📞 سجّل مكالمة</button><button class="btn sm wa" onclick="leadWA('${r.id}')">🟢 واتساب</button>`:''}${r.stage==='تم البيع ✅'&&!r.clientId?`<button class="btn sm navy" onclick="leadToClient('${r.id}')">👥 تحويل لعميل</button>`:''}<button class="btn sm" onclick="openForm('leads','${r.id}')">تعديل</button><button class="btn sm danger" onclick="del('leads','${r.id}')">حذف</button></div>`}];
+
+/* log a call / message — sets next follow-up automatically */
+function logContact(id,type){
+  const l=byId('leads',id);if(!l)return;const def=nextByCadence({acts:[...(l.acts||[]),{at:new Date().toISOString()}]});
+  $('#mTitle').textContent='📞 تسجيل تواصل — '+l.name;
+  $('#mForm').innerHTML=`<div class="form">${l.phone?`<div class="refbox">📞 ${telLink(l.phone)}${l.contact?' — '+esc(l.contact):''}</div>`:''}
+   ${type==='مكالمة'?`<details style="margin-bottom:10px"><summary class="small" style="cursor:pointer;font-weight:700">📝 نص المكالمة</summary><div class="small" style="background:var(--green-l);padding:8px 10px;border-radius:8px;margin-top:6px;line-height:1.9">${esc(fillTpl(sset().script,l))}</div></details>`:''}
+   <div class="fgrid"><div class="f"><label>نوع التواصل</label><select id="lc_type">${['مكالمة','واتساب','زيارة / معاينة','اجتماع','إيميل','لينكدإن'].map(x=>`<option ${x===type?'selected':''}>${x}</option>`).join('')}</select></div>
+   <div class="f"><label>النتيجة</label><select id="lc_res">${['ردّ — مهتم','ردّ — يبعتله البروفايل','حجز معاينة','طلب عرض سعر','ردّ — مش مهتم دلوقتي','لم يرد','الرقم غلط','تم البيع ✅'].map(x=>`<option>${x}</option>`).join('')}</select></div>
+   <div class="f"><label>المرحلة</label><select id="lc_stage">${STAGES.map(x=>`<option ${x===(l.stage==='جديد'?'تم التواصل':l.stage)?'selected':''}>${x}</option>`).join('')}</select></div>
+   <div class="f"><label>📅 المتابعة القادمة</label><input type="date" id="lc_next" value="${def}"></div>
+   <div class="f full"><label>ملاحظة</label><textarea id="lc_note" placeholder="مثال: كلمت م. أحمد، طلب البروفايل وهيرد الأسبوع الجاي"></textarea></div></div></div>
+   <div class="form-foot"><button type="submit" class="btn primary">💾 حفظ</button><button type="button" class="btn" onclick="closeModal()">إلغاء</button></div>`;
+  const res=$('#lc_res'),st=$('#lc_stage'),nx=$('#lc_next');
+  res.onchange=()=>{const v=res.value;
+    if(v==='لم يرد')nx.value=addDays(today(),1);
+    else if(v==='ردّ — يبعتله البروفايل')st.value='أُرسل البروفايل';
+    else if(v==='حجز معاينة')st.value='معاينة محجوزة';
+    else if(v==='طلب عرض سعر')st.value='عرض سعر مُرسل';
+    else if(v==='ردّ — مش مهتم دلوقتي'){st.value='مؤجل';nx.value=addDays(today(),30)}
+    else if(v==='الرقم غلط'||v==='تم البيع ✅'){st.value=v==='تم البيع ✅'?'تم البيع ✅':'مرفوض ❌';nx.value=''}};
+  $('#mForm').onsubmit=e=>{e.preventDefault();
+    l.acts=[...(l.acts||[]),{at:new Date().toISOString(),type:$('#lc_type').value,result:res.value,note:$('#lc_note').value.trim(),by:ME.email}];
+    l.stage=st.value;l.nextDate=leadOpen(l)?nx.value:'';put('leads',l);closeModal();toast('تم التسجيل ✅');
+    if(res.value==='ردّ — يبعتله البروفايل'&&l.phone&&confirm('تبعتله رسالة البروفايل على واتساب دلوقتي؟'))sendTpl(id,'t0');else render()};
+  formCtx={key:'leadlog'};$('#modal').classList.remove('hidden');
+}
+function leadWA(id){
+  const l=byId('leads',id);if(!l)return;const s=sset(),step=leadStep(l);
+  $('#mTitle').textContent='🟢 واتساب — '+l.name;
+  $('#mForm').innerHTML=`<div class="form">${l.phone?'':'<div class="alert">⚠️ مفيش رقم موبايل — هيتفتح واتساب وتختار الرقم بنفسك</div>'}
+   ${TPL_NAMES.map(([k,n],i)=>`<div class="card" style="margin-bottom:8px;padding:10px 12px;${i===step?'border:2px solid var(--green)':''}"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b class="small">${n}${i===step?' <span class="badge b-green">المقترحة</span>':''}</b><button type="button" class="btn sm wa" onclick="sendTpl('${id}','${k}')">إرسال</button></div><div class="small muted" style="white-space:pre-wrap;margin-top:4px">${esc(fillTpl(s[k],l))}</div></div>`).join('')}</div>
+   <div class="form-foot"><button type="button" class="btn" onclick="closeModal()">إغلاق</button></div>`;
+  $('#mForm').onsubmit=e=>e.preventDefault();formCtx={key:'leadwa'};$('#modal').classList.remove('hidden');
+}
+function sendTpl(id,k){
+  const l=byId('leads',id);if(!l)return;const txt=fillTpl(sset()[k],l),n=waNum(l.phone);
+  window.open(n?`https://wa.me/${n}?text=${encodeURIComponent(txt)}`:`https://wa.me/?text=${encodeURIComponent(txt)}`,'_blank');
+  l.acts=[...(l.acts||[]),{at:new Date().toISOString(),type:'واتساب',result:'رسالة: '+(TPL_NAMES.find(x=>x[0]===k)||[,''])[1],note:'',by:ME.email}];
+  if(l.stage==='جديد'||l.stage==='تم التواصل')l.stage=k==='t0'?'أُرسل البروفايل':'تم التواصل';
+  l.nextDate=nextByCadence(l);put('leads',l);closeModal();toast('تم فتح واتساب وتسجيل الرسالة ✅');render();
+}
+function leadToClient(id){const l=byId('leads',id);if(!l)return;ui.pendingLead=id;
+  const tmap={'مستشفى':'مستشفى','فندق':'فندق','مصنع':'مصنع','مدرسة / جامعة':'مدرسة / جامعة','مغسلة تجارية':'مغسلة','سكني / فرد':'سكني / فرد'};
+  openForm('clients',null,{name:l.name,division:l.division||'hvac',type:tmap[l.segment]||'شركة',contact:l.contact||'',contactTitle:l.contactTitle||'',phone:l.phone||'',phone2:l.phone2||'',area:l.area||'',notes:`عميل من المبيعات — المصدر: ${l.source||''}`})}
+function importLeads(){
+  const txt=$('#imp_txt').value.trim();if(!txt)return toast('الصق القائمة الأول');
+  const seg=$('#imp_seg').value,src=$('#imp_src').value,div=$('#imp_div').value;let n=0,skip=0;
+  const have=new Set((db.leads||[]).map(l=>waNum(l.phone)).filter(Boolean));
+  txt.split(/\r?\n/).forEach(line=>{const c=line.split(/\t|,|؛|;|\|/).map(x=>x.trim()).filter((x,i,a)=>x||i<a.length);if(!c[0])return;
+    const ph=c.find(x=>/^[+\d][\d\s-]{6,}$/.test(x))||'',rest=c.filter(x=>x&&x!==ph);
+    if(/^(الاسم|اسم|name)$/i.test(rest[0]||''))return;
+    if(ph&&have.has(waNum(ph))){skip++;return}
+    const l={id:uid(),createdAt:new Date().toISOString(),createdBy:ME.email,name:rest[0]||ph,phone:ph,area:rest[1]||'',contact:rest[2]||'',segment:seg,source:src,division:div,stage:'جديد',nextDate:today(),acts:[]};
+    db.leads.push(l);put('leads',l);if(ph)have.add(waNum(ph));n++});
+  toast(`تم إضافة ${n} عميل محتمل${skip?` — ${skip} مكرر اتشال`:''} ✅`);ui.salesTab='leads';render();
+}
+function saveSalesSettings(){
+  const s={...sset()};['offer','rep','script',...TPL_NAMES.map(x=>x[0])].forEach(k=>{const el=$('#ss_'+k);if(el)s[k]=el.value});
+  s.callTarget=Number($('#ss_callTarget').value)||20;db.settings.sales=s;putSettings();toast('تم الحفظ ✅');render();
+}
+function viewSales(){
+  const tab=ui.salesTab||'today',t=today(),s=sset(),L=db.leads||[];
+  const head=`<div class="page-head"><h1>📈 Sales &amp; Marketing</h1><div class="btns"><button class="btn primary" onclick="openForm('leads')">+ عميل محتمل</button></div></div>`,
+   tabsBar=`<div class="btns no-print" style="margin-bottom:14px">${[['today','📋 شغل النهارده'],['leads','👥 العملاء المحتملين'],['import','📥 استيراد قائمة'],['week','📊 أرقام الأسبوع'],['settings','⚙️ الرسايل والإعدادات']].map(([k,n])=>`<button class="btn ${tab===k?'navy':''}" onclick="ui.salesTab='${k}';render()">${n}</button>`).join('')}</div>`;
+  if(tab==='leads'){
+    listView({key:'leads',title:'👥 العملاء المحتملين',add:'عميل محتمل',
+      rows:()=>[...(db.leads||[])].sort((a,b)=>(a.nextDate||'9').localeCompare(b.nextDate||'9')),
+      search:r=>[r.name,r.contact,r.phone,r.area,r.notes,r.segment,r.source].join(' '),
+      filters:[{k:'due',l:'المتابعة',opts:[['due','🔴 مستحقة النهارده'],['open','كل المفتوحة'],['new','لم يتم التواصل']],test:(r,v)=>v==='due'?leadDue(r):v==='open'?leadOpen(r):!(r.acts||[]).length},
+        {k:'stage',l:'المرحلة',opts:STAGES,test:(r,v)=>(r.stage||'جديد')===v},{k:'seg',l:'النوع',opts:SEGMENTS,test:(r,v)=>r.segment===v},
+        {k:'src',l:'المصدر',opts:SOURCES,test:(r,v)=>r.source===v},{k:'div',l:'القسم',opts:[['hvac','❄️ HVAC'],['laundry','🧺 Laundry']],test:(r,v)=>(r.division||'hvac')===v}],
+      cols:COLS.leads(),
+      summary:list=>`<div class="btns" style="margin-bottom:12px">${STAGES.map(st=>{const c=list.filter(l=>(l.stage||'جديد')===st).length;return c?`<span class="badge ${STAGE_BADGE[st]||''}" style="font-size:13px;padding:4px 12px">${st}: ${c}</span>`:''}).join('')}</div>`});
+    $('#main .page-head h1').innerHTML='📈 Sales &amp; Marketing — العملاء المحتملين';$('#main .page-head').insertAdjacentHTML('afterend',tabsBar);return;
+  }
+  let body='';
+  if(tab==='today'){
+    const due=L.filter(leadDue).sort((a,b)=>a.nextDate.localeCompare(b.nextDate)),acts=actsAll().filter(a=>a.at.slice(0,10)===t),calls=acts.filter(a=>a.type==='مكالمة').length,wa=acts.filter(a=>a.type==='واتساب').length;
+    const plan={0:'اتصل بقائمة جديدة: مستشفيات وفنادق · تابع عروض الأسعار اللي اتبعتت الأسبوع اللي فات',1:'اتصل بقائمة جديدة: مصانع ومدارس · نزّل حالة واتساب بصور قبل وبعد',2:'اتصل تاني باللي قالوا "هنشوف" · ابعت رسالة جماعية للعملاء',3:'اتصل بمقاولين وكمبوندات · تابع الزيارات اللي اتعملت',4:'كلّم العملاء الحاليين: اطلب ترشيحات وتجديد عقود · راجع أرقام الأسبوع 📊',5:'رد على الرسايل بس',6:'رد على الرسايل وانزل ستوريز'}[parse(t).getDay()];
+    body=`<div class="alert" style="background:var(--green-l);border-color:var(--green);color:var(--green-d)"><span>🎯 <b>عرض الشهر:</b> ${esc(s.offer)}</span><button class="btn sm" onclick="ui.salesTab='settings';render()">تعديل</button></div>
+     <div class="stats"><div class="stat ${calls>=s.callTarget?'':'amber'}"><div class="n">${calls} / ${s.callTarget}</div><div class="l">📞 مكالمات النهارده</div><div class="prog" style="width:100%;margin-top:6px"><i style="width:${Math.min(100,calls/s.callTarget*100)}%"></i></div></div>
+      <div class="stat blue"><div class="n">${wa}</div><div class="l">🟢 رسايل واتساب النهارده</div></div><div class="stat red"><div class="n">${due.length}</div><div class="l">🔴 متابعات مستحقة</div></div>
+      <div class="stat navy" onclick="ui.salesTab='leads';ui.leads_due='new';render()"><div class="n">${L.filter(l=>!(l.acts||[]).length).length}</div><div class="l">لسه ما اتكلموش</div></div></div>
+     <div class="card"><h2>📅 خطة النهارده — ${dayName(t)}</h2><div>${esc(plan)}</div><div class="small muted" style="margin-top:6px">٩:٣٠ رسايل · ١٠–١٢ مكالمات (${s.callTarget} مكالمة) · ١٢–١ متابعة واتساب · ١–٢ لينكدإن · ٢–٣ عروض أسعار ومواعيد · ٨–١٠ م بوستات</div></div>
+     <div class="card"><h2>🔴 كلّم دول النهارده (${due.length})</h2>${due.length?due.map(l=>`<div class="list-item"><div><div class="t">${esc(l.name)} <span class="badge ${STAGE_BADGE[l.stage||'جديد']||''}">${esc(l.stage||'جديد')}</span></div><div class="small muted">${l.contact?'👤 '+esc(l.contact)+' · ':''}${l.phone?esc(l.phone)+' · ':''}${l.nextDate<t?'<b style="color:var(--red)">متأخرة من '+fmt(l.nextDate)+'</b>':'النهارده'}${lastAct(l)?' · آخر تواصل: '+esc(lastAct(l).result):''}</div></div>
+       <div class="btns">${l.phone?`<a class="btn sm" href="tel:${esc(l.phone)}" onclick="setTimeout(()=>logContact('${l.id}','مكالمة'),800)">📞 اتصال</a>`:''}<button class="btn sm primary" onclick="logContact('${l.id}','مكالمة')">سجّل</button><button class="btn sm wa" onclick="leadWA('${l.id}')">🟢</button></div></div>`).join(''):'<div class="muted small">مفيش متابعات مستحقة 👍 — ضيف قائمة جديدة من "📥 استيراد قائمة"</div>'}</div>`;
+  }
+  if(tab==='import'){
+    body=`<div class="card"><h2>📥 استيراد قائمة عملاء محتملين</h2>
+     <p class="small" style="margin-top:0">انسخ من Excel أو Google Sheets والصق هنا. <b>كل سطر = جهة</b>، والأعمدة بالترتيب ده:<br><b>الاسم · التليفون · المنطقة · اسم المسؤول</b> (المنطقة والمسؤول اختياري). الأرقام المكررة بتتشال لوحدها.</p>
+     <textarea id="imp_txt" style="width:100%;min-height:180px;border:1px solid #d5dae4;border-radius:9px;padding:10px;font-family:inherit" placeholder="مستشفى النور التخصصي	0223456789	مدينة نصر	د. أحمد&#10;فندق النيل	01012345678	الزمالك"></textarea>
+     <div class="fgrid" style="margin-top:10px"><div class="f"><label>النوع لكل القائمة</label><select id="imp_seg">${SEGMENTS.map(x=>`<option>${x}</option>`).join('')}</select></div>
+     <div class="f"><label>المصدر</label><select id="imp_src">${SOURCES.map(x=>`<option>${x}</option>`).join('')}</select></div>
+     <div class="f"><label>القسم</label><select id="imp_div"><option value="hvac">❄️ HVAC</option><option value="laundry" ${ui0.div==='laundry'?'selected':''}>🧺 Laundry</option></select></div></div>
+     <div style="margin-top:12px"><button class="btn primary" onclick="importLeads()">📥 إضافة للقائمة</button></div></div>`;
+  }
+  if(tab==='week'){
+    const ws=weekStart(t),pw=addDays(ws,-7),inW=(a,s0)=>a.at.slice(0,10)>=s0&&a.at.slice(0,10)<addDays(s0,7);
+    const stat=s0=>{const A=actsAll().filter(a=>inW(a,s0));return{calls:A.filter(a=>a.type==='مكالمة').length,talks:A.filter(a=>/^ردّ|حجز|طلب|تم البيع/.test(a.result||'')).length,wa:A.filter(a=>a.type==='واتساب').length,
+      visits:A.filter(a=>a.result==='حجز معاينة').length,quotes:(db.quotes||[]).filter(q=>q.date>=s0&&q.date<addDays(s0,7)).length,won:A.filter(a=>a.result==='تم البيع ✅').length,newL:L.filter(l=>(l.createdAt||'').slice(0,10)>=s0&&(l.createdAt||'').slice(0,10)<addDays(s0,7)).length}};
+    const a=stat(ws),b=stat(pw),row=(n,k)=>`<tr><td>${n}</td><td><b>${a[k]}</b></td><td class="muted">${b[k]}</td></tr>`;
+    const bySrc=SOURCES.map(src=>{const ls=L.filter(l=>l.source===src);return{src,n:ls.length,won:ls.filter(l=>l.stage==='تم البيع ✅').length}}).filter(x=>x.n);
+    body=`<div class="grid g2"><div class="card"><h2>📊 الأسبوع ده (من ${fmt(ws)})</h2><div class="table-wrap"><table><thead><tr><th></th><th>الأسبوع ده</th><th>اللي فات</th></tr></thead><tbody>
+      ${row('📞 مكالمات','calls')}${row('💬 محادثات (ردّوا)','talks')}${row('🟢 رسايل واتساب','wa')}${row('🗓️ معاينات اتحجزت','visits')}${row('💼 عروض أسعار اتبعتت','quotes')}${row('✅ صفقات اتقفلت','won')}${row('➕ عملاء محتملين جدد','newL')}</tbody></table></div></div>
+     <div class="card"><h2>📡 كل قناة جابت إيه</h2>${bySrc.length?`<div class="table-wrap"><table><thead><tr><th>المصدر</th><th>عملاء محتملين</th><th>صفقات</th><th>نسبة النجاح</th></tr></thead><tbody>${bySrc.sort((x,y)=>y.won-x.won||y.n-x.n).map(x=>`<tr><td>${esc(x.src)}</td><td>${x.n}</td><td><b>${x.won}</b></td><td>${Math.round(x.won/x.n*100)}%</td></tr>`).join('')}</tbody></table></div><p class="small muted">ركّز وقتك على القناة اللي بتجيب صفقات أكتر.</p>`:'<div class="muted small">لسه مفيش بيانات</div>'}</div></div>`;
+  }
+  if(tab==='settings'){
+    body=`<div class="card"><h2>⚙️ الإعدادات</h2><div class="fgrid">
+      <div class="f full"><label>🎯 عرض الشهر</label><input id="ss_offer" value="${esc(s.offer)}"></div>
+      <div class="f"><label>اسمك في الرسايل والمكالمة</label><input id="ss_rep" value="${esc(s.rep)}" placeholder="مثال: م. ..."></div>
+      <div class="f"><label>هدف المكالمات اليومي</label><input id="ss_callTarget" type="number" value="${esc(s.callTarget)}"></div>
+      <div class="f full"><label>📝 نص المكالمة</label><textarea id="ss_script" style="min-height:90px">${esc(s.script)}</textarea></div></div></div>
+     <div class="card"><h2>🟢 رسايل الواتساب الجاهزة</h2><p class="small muted" style="margin-top:0">الكلمات دي بتتغير لوحدها: {المسؤول} {الجهة} {المنطقة} {النوع} {العرض} {اسمي}</p>
+      ${TPL_NAMES.map(([k,n])=>`<div class="f" style="margin-bottom:10px"><label>${n}</label><textarea id="ss_${k}" style="min-height:80px">${esc(s[k])}</textarea></div>`).join('')}</div>
+     <button class="btn primary" onclick="saveSalesSettings()">💾 حفظ</button>`;
+  }
+  $('#main').innerHTML=head+tabsBar+body;
+}
+
 function viewQuotes(){
   const months=[...new Set([...(db.quotes||[]).map(i=>(i.date||'').slice(0,7)),today().slice(0,7)])].filter(Boolean).sort().reverse().map(m=>[m,m.split('-').reverse().join('/')]);
   listView({key:'quotes',title:'💼 عروض الأسعار',add:'عرض سعر جديد',
@@ -1346,10 +1514,10 @@ async function mergeImport(d,b){
   for(const k of ['contracts','visits','jobs']){for(const o of d[k]){const c=cl(o.clientId);
     if(c&&(remap[o.clientId]||!o.no)){if(!o.n)o.n=childNo(k,o.clientId).n;o.no=`${c.ref}/${LETTER[k]}${o.n}`}upsert(k,o)}}
   for(const j of d.jobs||[])if('value' in j){(d.jobPrices=d.jobPrices||[]).push({id:j.id,value:j.value});delete j.value;const x=byId('jobs',j.id);if(x)delete x.value}
-  for(const k of ['techs','logs','invoices','jobPrices','letters','quotes'])(d[k]||[]).forEach(o=>upsert(k,o));
+  for(const k of ['techs','logs','invoices','jobPrices','letters','quotes','leads'])(d[k]||[]).forEach(o=>upsert(k,o));
   if(fresh&&d.settings)db.settings={...b.settings,...d.settings};
   for(const fl of d.files||[])await Files.put(fl.id,b64ToBlob(fl.data,fl.type),fl.kind||'contract');
-  if(MODE==='cloud'){await Cloud.bulk(['clients','techs','contracts','visits','jobs','logs','invoices','jobPrices','letters','quotes'].flatMap(k=>(d[k]||[]).map(o=>[k,byId(k,o.id)])));
+  if(MODE==='cloud'){await Cloud.bulk(['clients','techs','contracts','visits','jobs','logs','invoices','jobPrices','letters','quotes','leads'].flatMap(k=>(d[k]||[]).map(o=>[k,byId(k,o.id)])));
     d.techs.filter(t=>t.email).forEach(t=>Cloud.setUser(t.email,{email:t.email,role:'tech',techId:t.id,name:t.name}));if(fresh)putSettings()}
   else save();
   toast('تم الاستيراد بنجاح ✅');render();
@@ -1420,7 +1588,7 @@ function render(){
   if(isTech()&&page!=='client'&&!NAV_TECH.some(n=>n[0]===page))page='daily';
   FULL=db;if(page!=='settings')db=divView(FULL);
   try{renderNav(page);
-  ({dashboard:viewDashboard,daily:viewDaily,clients:viewClients,client:()=>viewClient(arg),contracts:viewContracts,invoices:viewInvoices,quotes:viewQuotes,letters:viewLetters,visits:viewVisits,jobs:viewJobs,logs:viewLogs,techs:viewTechs,settings:viewSettings}[page]||viewDashboard)();
+  ({dashboard:viewDashboard,daily:viewDaily,clients:viewClients,client:()=>viewClient(arg),contracts:viewContracts,invoices:viewInvoices,quotes:viewQuotes,sales:viewSales,letters:viewLetters,visits:viewVisits,jobs:viewJobs,logs:viewLogs,techs:viewTechs,settings:viewSettings}[page]||viewDashboard)();
   if(MODE==='cloud'){const sb=syncBanner();if(sb)$('#main').insertAdjacentHTML('afterbegin',sb)}
   }finally{db=FULL;FULL=null}
 }
@@ -1513,7 +1681,7 @@ const G_BTN=`<button class="btn" style="width:100%;justify-content:center;paddin
 const showLogin=()=>gate(`<h2 style="justify-content:center">برنامج متابعة الأعمال والصيانة</h2><p class="muted small">للمدير والفنيين — ادخل بحساب Gmail المسجل لدى الشركة</p>${G_BTN}`);
 const showDenied=e=>gate(`<h2 style="justify-content:center;color:var(--red)">الحساب غير مسجل</h2><p class="small">الحساب <b dir="ltr">${esc(e)}</b> ليس له صلاحية دخول.<br>اطلب من المدير إضافة هذا البريد في بيانات الفني.</p><button class="btn" onclick="Cloud.logout()">الدخول بحساب آخر</button>`);
 const SYNC={pending:{},failed:[]};
-const ENT_NAME={quotes:'عرض سعر',letters:'خطاب',clients:'عميل',techs:'فني',contracts:'عقد',visits:'زيارة',jobs:'عمل',logs:'سجل يومي',invoices:'فاتورة'};
+const ENT_NAME={leads:'عميل محتمل',quotes:'عرض سعر',letters:'خطاب',clients:'عميل',techs:'فني',contracts:'عقد',visits:'زيارة',jobs:'عمل',logs:'سجل يومي',invoices:'فاتورة'};
 const syncLabel=(k,o)=>`${ENT_NAME[k]||k} ${o&&(o.invNo||o.no||o.ref||o.name||o.title)||''}`.trim();
 function syncBanner(){
   const pend=Object.values(SYNC.pending).reduce((a,b)=>a+b,0);let h='';
@@ -1575,7 +1743,7 @@ async function startCloud(){
     if(!role||(role==='tech'&&!techId)){showDenied(email);return}
     ME={email,role,techId,name:u.displayName,photo:u.photoURL};
     gate(`<p class="muted">جاري تحميل البيانات...</p>`);
-    const cols=role==='manager'?['clients','techs','contracts','visits','jobs','logs','invoices','jobPrices','letters','quotes','users']:['clients','techs','visits','jobs','logs'];
+    const cols=role==='manager'?['clients','techs','contracts','visits','jobs','logs','invoices','jobPrices','letters','quotes','leads','users']:['clients','techs','visits','jobs','logs'];
     const loaded=new Set(),need=cols.length+1;
     const mark=k=>{if(loaded.has(k))return scheduleRender();loaded.add(k);if(loaded.size===need){gate(null);if(role==='manager'){migrateJobValues();restoreContractPrices()}render();setTimeout(checkExpiryNotify,1500)}};
     cols.forEach(k=>unsubs.push(FS.onSnapshot(FS.collection(fdb,k),{includeMetadataChanges:true},snap=>{db[k]=snap.docs.map(d=>k==='users'?{email:d.id,...d.data()}:d.data());const pn=snap.docs.filter(d=>d.metadata.hasPendingWrites).length;if(pn!==(SYNC.pending[k]||0)){SYNC.pending[k]=pn;if(loaded.has(k))scheduleRender()}mark(k)},e=>{console.error(k,e);mark(k)})));
