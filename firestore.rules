@@ -63,6 +63,11 @@ service cloud.firestore {
       allow read, write: if isManager();
     }
 
+    // كتالوجات وأسعار الموردين: المدير فقط
+    match /catalog/{id} {
+      allow read, write: if isManager();
+    }
+
     // قيمة الأعمال المالية: المدير فقط (منفصلة عن بيانات العمل التي يراها الفني)
     match /jobPrices/{id} {
       allow read, write: if isManager();
