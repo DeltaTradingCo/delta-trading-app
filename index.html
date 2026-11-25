@@ -1508,7 +1508,7 @@ function mailBackup(){location.href=`mailto:${db.settings.email}?subject=${encod
 $('#importFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{let d;try{d=JSON.parse(r.result);if(!d||!Array.isArray(d.clients))throw 0}catch(_){toast('الملف غير صالح');return}
   const b=blank();for(const k in b)if(!(k in d))d[k]=b[k];
   const n=['clients','contracts','visits','jobs','logs','techs'].map(k=>d[k].length).reduce((a,x)=>a+x,0);
-  if(!confirm(`إضافة/تحديث البيانات من الملف؟\n${d.clients.length} عميل · ${d.contracts.length} عقد · ${d.visits.length} زيارة · ${d.jobs.length} عمل${(d.files||[]).length?` · ${d.files.length} ملف مرفق`:''}\nالبيانات الحالية لن تُحذف.`))return;
+  if(!confirm(`إضافة/تحديث البيانات من الملف؟\n${(d.leads||[]).length&&!d.clients.length&&!d.contracts.length?`📈 ${d.leads.length} عميل محتمل (Sales)`:`${d.clients.length} عميل · ${d.contracts.length} عقد · ${d.visits.length} زيارة · ${d.jobs.length} عمل${(d.leads||[]).length?` · ${d.leads.length} عميل محتمل`:''}`}${(d.files||[]).length?` · ${d.files.length} ملف مرفق`:''}\nالبيانات الحالية لن تُحذف.`))return;
   mergeImport(d,b).catch(err=>{console.error(err);toast('حدث خطأ أثناء الاستيراد')});e.target.value=''};r.readAsText(f)};
 async function mergeImport(d,b){
   const fresh=!db.clients.length;const remap={};
