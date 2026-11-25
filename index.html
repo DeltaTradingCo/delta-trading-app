@@ -1163,6 +1163,9 @@ function saveSalesSettings(){
   const s={...sset()};['offer','rep','script',...TPL_NAMES.map(x=>x[0])].forEach(k=>{const el=$('#ss_'+k);if(el)s[k]=el.value});
   s.callTarget=Number($('#ss_callTarget').value)||15;db.settings.sales=s;putSettings();toast('تم الحفظ ✅');render();
 }
+function pullNextLeads(){const s=sset(),t=today();const due=(db.leads||[]).filter(leadDue).length;const n=Math.max(0,s.callTarget-due);if(!n){toast('عندك '+due+' متابعة النهارده — خلّصهم الأول');return}
+  const nx=(db.leads||[]).filter(l=>leadOpen(l)&&!(l.acts||[]).length&&l.nextDate>t).sort((a,b)=>a.nextDate.localeCompare(b.nextDate)).slice(0,n);
+  nx.forEach(l=>{l.nextDate=t;put('leads',l)});toast('اتنقل '+nx.length+' جهة للنهارده ✅');render()}
 function viewSales(){
   const tab=ui.salesTab||'today',t=today(),s=sset(),L=db.leads||[];
   const head=`<div class="page-head"><h1>📈 Sales &amp; Marketing</h1><div class="btns"><button class="btn primary" onclick="openForm('leads')">+ عميل محتمل</button></div></div>`,
@@ -1188,7 +1191,8 @@ function viewSales(){
       <div class="stat navy" onclick="ui.salesTab='leads';ui.leads_due='new';render()"><div class="n">${L.filter(l=>!(l.acts||[]).length).length}</div><div class="l">لسه ما اتكلموش</div></div></div>
      <div class="card"><h2>📅 خطة النهارده — ${dayName(t)}</h2><div>${esc(plan)}</div><div class="small muted" style="margin-top:6px">🕘 يوم العمل ٩–٣ · ٩–١٠ مفيش حاجة · <b>١٠–١٢ مكالمات (${s.callTarget} مكالمة)</b> · ١٢–١ متابعة واتساب · ١–٢ عروض أسعار ومواعيد · ٢–٢:٣٠ لينكدإن وتسجيل النتايج · ٢:٣٠–٣ مفيش حاجة</div></div>
      <div class="card"><h2>🔴 كلّم دول النهارده (${due.length})</h2>${due.length?due.map((l,i)=>`<div class="list-item"><div><div class="t"><span class="badge" style="font-variant-numeric:tabular-nums">⏰ ${callSlot(i,s.callTarget)}</span> ${esc(l.name)} <span class="badge ${STAGE_BADGE[l.stage||'جديد']||''}">${esc(l.stage||'جديد')}</span></div><div class="small muted">${l.contact?'👤 '+esc(l.contact)+' · ':''}${l.phone?esc(l.phone)+' · ':''}${l.nextDate<t?'<b style="color:var(--red)">متأخرة من '+fmt(l.nextDate)+'</b>':'النهارده'}${lastAct(l)?' · آخر تواصل: '+esc(lastAct(l).result):''}</div></div>
-       <div class="btns">${l.phone?`<a class="btn sm" href="tel:${esc(l.phone)}" onclick="setTimeout(()=>logContact('${l.id}','مكالمة'),800)">📞 اتصال</a>`:''}<button class="btn sm primary" onclick="logContact('${l.id}','مكالمة')">سجّل</button><button class="btn sm wa" onclick="leadWA('${l.id}')">🟢</button></div></div>`).join(''):'<div class="muted small">مفيش متابعات مستحقة 👍 — ضيف قائمة جديدة من "📥 استيراد قائمة"</div>'}</div>`;
+       <div class="btns">${l.phone?`<a class="btn sm" href="tel:${esc(l.phone)}" onclick="setTimeout(()=>logContact('${l.id}','مكالمة'),800)">📞 اتصال</a>`:''}<button class="btn sm primary" onclick="logContact('${l.id}','مكالمة')">سجّل</button><button class="btn sm wa" onclick="leadWA('${l.id}')">🟢</button></div></div>`).join(''):'<div class="muted small">مفيش متابعات مستحقة 👍 — ضيف قائمة جديدة من "📥 استيراد قائمة"</div>'}
+       ${(()=>{const nxt=L.filter(l=>leadOpen(l)&&!(l.acts||[]).length&&l.nextDate>t).length;return nxt?`<div style="margin-top:10px;border-top:1px dashed #d5dae4;padding-top:10px"><button class="btn primary" onclick="pullNextLeads()">⏩ هات الدفعة الجاية (${Math.min(nxt,s.callTarget)} جهة) للنهارده</button> <span class="small muted">فيه ${nxt} جهة متحددلها مواعيد جاية</span></div>`:''})()}</div>`;
   }
   if(tab==='import'){
     body=`<div class="card" style="border:2px dashed var(--green)"><h2>📂 عندك ملف قائمة جاهز (.json)؟</h2><p class="small" style="margin-top:0">لو عندك ملف القوائم الجاهز (زي <b>leads-cairo-east.json</b>)، ارفعه من هنا مرة واحدة. الأرقام المكررة مش هتتضاف تاني.</p><button class="btn primary" onclick="$('#importFile').click()">📂 رفع ملف القائمة</button></div>
