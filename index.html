@@ -1237,6 +1237,9 @@ function cfClear(){ui.cf={};ui.catQ='';const q=$('#catQ');if(q)q.value='';catFil
 function cfActive(){return Object.keys(CF()).length>0}
 function catFilterBar(){const el=$('#catFilters'),c=curCat();if(!el||!c)return;const f=CF(),m=cMeta(c),idx=Object.values(catIndex(c));
   const secs=c.cat.sections.map((x,i)=>[i,x.name]),fams=f.sec!=null&&c.cat.sections[f.sec]?c.cat.sections[f.sec].families.map((x,i)=>[i,x.name]):[];
+  const pool=idx.filter(x=>(f.sec==null||x.si===+f.sec)&&(f.fam==null||x.fi===+f.fam)&&(!f.kind||(x.it.kind||'o')===f.kind)&&(!f.heat||x.it.heat===f.heat)&&x.it.cap!=null);
+  const capOpts=[...new Set(pool.map(x=>x.it.cap))].sort((a,b)=>a-b).map(v=>[v,m.division==='hvac'?`${(v*1000).toLocaleString('en-US')} BTU`:`${v} kg`]);
+  if(f.cap!=null&&!capOpts.some(o=>String(o[0])===String(f.cap)))capOpts.unshift([f.cap,(m.division==='hvac'?f.cap*1000+' BTU':f.cap+' kg')]);
   const heats=[...new Set(idx.map(x=>x.it.heat).filter(Boolean))].map(h=>[h,heatLbl(c,h)]),hasOpt=idx.some(x=>x.it.kind==='o'),hasCap=idx.some(x=>x.it.cap!=null),hasNew=idx.some(x=>x.it.new);
   const sel=(k,ph,opts)=>`<select onchange="cfSet('${k}',this.value)" style="padding:7px;border:1px solid #d5dae4;border-radius:8px;font-family:inherit;max-width:240px"><option value="">${ph}</option>${opts.map(([v,l])=>`<option value="${esc(String(v))}" ${String(f[k])===String(v)?'selected':''}>${esc(l)}</option>`).join('')}</select>`;
   const num=(k,ph)=>`<input type="number" placeholder="${ph}" value="${f[k]??''}" onchange="cfSet('${k}',this.value===''?'':+this.value)" style="width:82px;padding:7px;border:1px solid #d5dae4;border-radius:8px">`;
@@ -1244,7 +1247,7 @@ function catFilterBar(){const el=$('#catFilters'),c=curCat();if(!el||!c)return;c
    ${sel('sec',m.division==='hvac'?'🏷️ كل الماركات':'🗂️ كل الأقسام',secs)}${fams.length?sel('fam','📦 كل الأنواع',fams):''}
    ${hasOpt?sel('kind','🔧 ماكينات + إضافات',[['m','🏭 ماكينات بس'],['o','🔩 إضافات وقطع بس']]):''}
    ${heats.length?sel('heat',m.division==='hvac'?'❄️ بارد / بارد-ساخن':'🔥 أي نوع تسخين',heats):''}
-   ${hasCap?`<span class="small muted">${m.division==='hvac'?'❄️ القدرة (ألف BTU)':'⚖️ السعة كجم'}</span>${num('cmin','من')}${num('cmax','لحد')}`:''}
+   ${hasCap?sel('cap',m.division==='hvac'?'❄️ كل القدرات (BTU)':'⚖️ كل السعات (كجم)',capOpts):''}
    <span class="small muted">💰 السعر ${CUR[m.currency]||''}</span>${num('pmin','من')}${num('pmax','لحد')}
    ${hasNew?`<label class="small" style="display:flex;gap:4px;align-items:center"><input type="checkbox" ${f.isnew?'checked':''} onchange="cfSet('isnew',this.checked)"> 🆕 الجديد بس</label>`:''}
    ${cfActive()||ui.catQ?`<button class="btn sm" onclick="cfClear()">✕ مسح الفلاتر</button>`:''}</div>
@@ -1264,11 +1267,11 @@ function catResults(){const el=$('#catRes'),c=curCat();if(!el||!c)return;setTime
     let hits=all.filter(x=>{const it=x.it;
       if(f.sec!=null&&x.si!==+f.sec)return false;if(f.fam!=null&&x.fi!==+f.fam)return false;
       if(f.kind&&(it.kind||'o')!==f.kind)return false;if(f.heat&&it.heat!==f.heat)return false;if(f.isnew&&!it.new)return false;
-      if((f.cmin!=null||f.cmax!=null)&&(it.cap==null||(f.cmin!=null&&it.cap<f.cmin)||(f.cmax!=null&&it.cap>f.cmax)))return false;
+      if(f.cap!=null&&f.cap!==''&&String(it.cap)!==String(f.cap))return false;
       if(f.pmin!=null&&it.price<f.pmin)return false;if(f.pmax!=null&&it.price>f.pmax)return false;
       if(!ws.length)return true;const h=[it.model,it.desc,it.code,it.codeOpt,x.f.name,x.s.name,x.t.name,...(it.specs||[]).flat()].join(' ').toLowerCase();return ws.every(w=>h.includes(w))});
     if(q)hits=hits.map(x=>[x,((x.it.model||'')+' '+(x.it.code||'')).toLowerCase().includes(q)?0:([x.it.model,x.it.desc].join(' ').toLowerCase().includes(ws[0])?1:2)]).sort((a,b)=>a[1]-b[1]).map(a=>a[0]);
-    else if(f.cmin!=null||f.cmax!=null||f.kind==='m')hits.sort((a,b)=>(a.it.cap||0)-(b.it.cap||0)||a.it.price-b.it.price);
+    else if(f.cap!=null||f.kind==='m')hits.sort((a,b)=>(a.it.cap||0)-(b.it.cap||0)||a.it.price-b.it.price);
     const by=new Map();hits.slice(0,400).forEach(x=>{if(!by.has(x.f))by.set(x.f,[]);by.get(x.f).push(x.it)});
     el.innerHTML=`<div class="small muted" style="margin-bottom:8px">${hits.length} نتيجة${hits.length>400?' (أول 400 — ضيّق الفلاتر)':''}</div>`+([...by].map(([fm,its])=>famCard(c,fm,its)).join('')||'<div class="card muted">مفيش نتائج — جرّب توسّع الفلاتر</div>');return}
   el.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px">${c.cat.sections.map((s,i)=>{const n=s.families.reduce((a,f)=>a+f.tables.reduce((b,t)=>b+t.items.length,0),0),im=s.img&&c.imgs[s.img];
