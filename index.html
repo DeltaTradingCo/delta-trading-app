@@ -1181,9 +1181,9 @@ const fEgp=v=>v==null?'—':Math.round(v).toLocaleString('en-US')+' ج.م';
 function prS(catId,cur){const s=sset(),all=s.prc||{};let p=all[catId];
   if(!p&&cur!=='EGP'&&s.pr)p=s.pr; // توافق مع الإعداد القديم (كتالوج اليورو)
   return{rate:cur==='EGP'?1:0,disc:0,ship:0,margin:0,...(p||{}),...(cur==='EGP'?{rate:1}:{})}}
-function calc(catId,cur,v){const p=prS(catId,cur);if(!p.rate)return null;return v*(1-p.disc/100)*(1+p.ship/100)*(1+p.margin/100)*p.rate}
+function calc(catId,cur,v,v2){const p=prS(catId,cur);if(!p.rate)return null;if(p.base==='price2'&&v2!=null)return v2*(1-p.disc/100);return v*(1-p.disc/100)*(1+p.ship/100)*(1+p.margin/100)*p.rate}
 function savePr(){const c=curCat();if(!c)return;const m=cMeta(c),s=sset();s.prc={...(s.prc||{})};
-  s.prc[c.meta.id]={rate:m.currency==='EGP'?1:(+$('#pr_rate').value||0),disc:+$('#pr_disc').value||0,ship:+(($('#pr_ship')||{}).value||0),margin:+$('#pr_margin').value||0};
+  s.prc[c.meta.id]={base:($('#pr_base')||{}).value||'price',rate:m.currency==='EGP'?1:(+$('#pr_rate').value||0),disc:+$('#pr_disc').value||0,ship:+(($('#pr_ship')||{}).value||0),margin:+$('#pr_margin').value||0};
   db.settings.sales=s;putSettings();toast('تم حفظ إعدادات التسعير ✅');render()}
 function catUpload(inp){const f=inp.files[0];inp.value='';if(!f)return;const r=new FileReader();r.onload=async()=>{let d;try{d=JSON.parse(r.result);if(!d.catalog||!Array.isArray(d.catalog.sections))throw 0}catch(_){toast('الملف مش ملف كتالوج صالح');return}
   const c=d.catalog,n=c.sections.reduce((a,s)=>a+s.families.reduce((b,f)=>b+f.tables.reduce((x,t)=>x+t.items.length,0),0),0);
@@ -1197,7 +1197,7 @@ async function catDelete(id){if(!confirm('حذف الكتالوج ده من ال
 // سلة العرض (ممكن تجمع من أكتر من كتالوج)
 function bGet(){try{return JSON.parse(localStorage.getItem('delta_basket')||'[]')}catch(_){return ui.basket||[]}}
 function bSet(b){ui.basket=b;try{localStorage.setItem('delta_basket',JSON.stringify(b))}catch(_){}}
-const bCur=i=>i.cur||'EUR',bUnit=i=>calc(i.cat,bCur(i),i.eur);
+const bCur=i=>i.cur||'EUR',bUnit=i=>calc(i.cat,bCur(i),i.eur,i.p2);
 function bAdd(id){const c=curCat();if(!c)return;const x=catIndex(c)[id];if(!x)return;const m=cMeta(c),b=bGet(),e=b.find(i=>i.id===id&&i.cat===c.meta.id);
   if(e)e.qty++;else b.push({cat:c.meta.id,cur:m.currency||'EUR',title:m.offerTitle||'',id,name:x.it.model||x.it.desc,desc:x.it.model?x.it.desc||'':'',code:x.it.code||x.it.codeOpt||'',fam:x.f.name,eur:x.it.price,p2:x.it.price2||null,
     specs:(x.it.specs||[]).slice(0,4).map(([a,v])=>a+': '+v).join(' · '),qty:1});
@@ -1205,27 +1205,32 @@ function bAdd(id){const c=curCat();if(!c)return;const x=catIndex(c)[id];if(!x)re
 function bQty(i,v){const b=bGet();b[i].qty=Math.max(1,+v||1);bSet(b);catBasketRender()}
 function bDel(i){const b=bGet();b.splice(i,1);bSet(b);catBasketRender()}
 function bText(withSpecs=true){return bGet().map((i,k)=>{const u=bUnit(i);return`${k+1}) ${i.qty} × ${i.name}${i.desc?' — '+i.desc:''}${i.code?' — كود '+i.code:''}${withSpecs&&i.specs?'\n   '+i.specs:''}\n   سعر الوحدة: ${u!=null?fEgp(u):fCur(i.eur,bCur(i))}${i.qty>1?' · الإجمالي: '+(u!=null?fEgp(u*i.qty):fCur(i.eur*i.qty,bCur(i))):''}`}).join('\n')}
-function bTotals(){const b=bGet();let g=0,miss=false;const byCur={};b.forEach(i=>{const u=bUnit(i);if(u==null)miss=true;else g+=u*i.qty;byCur[bCur(i)]=(byCur[bCur(i)]||0)+i.eur*i.qty});return{g:miss?null:g,byCur}}
+function bTotals(){const b=bGet();let g=0,miss=false;const byCur={},byCur2={};b.forEach(i=>{const u=bUnit(i);if(u==null)miss=true;else g+=u*i.qty;byCur[bCur(i)]=(byCur[bCur(i)]||0)+i.eur*i.qty;if(i.p2!=null)byCur2[bCur(i)]=(byCur2[bCur(i)]||0)+i.p2*i.qty});return{g:miss?null:g,byCur,byCur2}}
 const fByCur=o=>Object.entries(o).map(([c,v])=>fCur(v,c)).join(' + ');
 function bCopy(){const T=bTotals(),t=bText()+'\n\nالإجمالي: '+(T.g!=null?fEgp(T.g):fByCur(T.byCur));navigator.clipboard.writeText(t).then(()=>toast('اتنسخ ✅')).catch(()=>prompt('انسخ النص:',t))}
 function bQuote(){const T=bTotals(),b=bGet();if(T.g==null&&!confirm('فيه أصناف لسه ما اتحددلهاش تسعير بالجنيه (سعر اليورو في إعدادات التسعير) — المبلغ هيتحسب صفر. تكمل؟'))return;
   const titles=[...new Set(b.map(i=>i.title).filter(Boolean))];
   openForm('quotes',null,{subject:(titles.join(' + ')||'توريد معدات')+':\n'+bText(false),amount:Math.round(T.g||0),date:today()})}
-function catBasketRender(){const el=$('#catBasket');if(!el)return;const b=bGet();if(!b.length){el.innerHTML='';return}const T=bTotals();
-  el.innerHTML=`<div class="card" style="border:2px solid var(--green)"><h2>🧾 العرض اللي بتجهزه (${b.reduce((a,i)=>a+i.qty,0)} قطعة)</h2><div class="table-wrap"><table><thead><tr><th>الصنف</th><th>الكمية</th><th>سعر الكتالوج</th><th>سعر الوحدة بعد التسعير</th><th>الإجمالي</th><th></th></tr></thead><tbody>
-   ${b.map((i,k)=>`<tr><td><div class="cv"><b dir="ltr">${esc(i.name)}</b><div class="small muted">${esc(i.fam)}${i.code?' · '+esc(i.code):''}</div></div></td><td><input type="number" min="1" value="${i.qty}" style="width:60px" onchange="bQty(${k},this.value)"></td><td class="nowrap">${fCur(i.eur,bCur(i))}</td><td class="nowrap">${fEgp(bUnit(i))}</td><td class="nowrap"><b>${fEgp(bUnit(i)==null?null:bUnit(i)*i.qty)}</b></td><td><button class="btn sm danger" onclick="bDel(${k})">✕</button></td></tr>`).join('')}
-   <tr><td colspan="2"><b>الإجمالي</b></td><td class="nowrap"><b>${fByCur(T.byCur)}</b></td><td></td><td class="nowrap"><b>${fEgp(T.g)}</b></td><td></td></tr></tbody></table></div>
+function catBasketRender(){const el=$('#catBasket');if(!el)return;const b=bGet();if(!b.length){el.innerHTML='';return}const T=bTotals(),H2=b.some(i=>i.p2!=null);
+  el.innerHTML=`<div class="card" style="border:2px solid var(--green)"><h2>🧾 العرض اللي بتجهزه (${b.reduce((a,i)=>a+i.qty,0)} قطعة)</h2><div class="table-wrap"><table${rzTable('cat_basket'+(H2?'2':''))}><thead><tr>${['الصنف','الكمية','سعر الكتالوج / الموزع',...(H2?['سعر المستهلك']:[]),'سعر البيع للوحدة','الإجمالي',...(H2?['ربحك']:[]),''].map((h,i)=>rzTh('cat_basket'+(H2?'2':''),i,h)).join('')}</tr></thead><tbody>
+   ${b.map((i,k)=>{const u=bUnit(i);return`<tr><td><div class="cv"><b dir="ltr">${esc(i.name)}</b><div class="small muted">${esc(i.fam)}${i.code?' · '+esc(i.code):''}</div></div></td><td><input type="number" min="1" value="${i.qty}" style="width:60px" onchange="bQty(${k},this.value)"></td><td class="nowrap">${fCur(i.eur,bCur(i))}</td>${H2?`<td class="nowrap">${i.p2!=null?fCur(i.p2,bCur(i)):'—'}</td>`:''}<td class="nowrap">${fEgp(u)}</td><td class="nowrap"><b>${fEgp(u==null?null:u*i.qty)}</b></td>${H2?`<td class="nowrap small">${bCur(i)==='EGP'&&u!=null?fEgp((u-i.eur)*i.qty):'—'}</td>`:''}<td><button class="btn sm danger" onclick="bDel(${k})">✕</button></td></tr>`}).join('')}
+   <tr><td colspan="2"><b>الإجمالي</b></td><td class="nowrap"><b>${fByCur(T.byCur)}</b></td>${H2?`<td class="nowrap"><b>${fByCur(T.byCur2)}</b></td>`:''}<td></td><td class="nowrap"><b>${fEgp(T.g)}</b></td>${H2?'<td></td>':''}<td></td></tr></tbody></table></div>
    <div class="btns" style="margin-top:10px"><button class="btn primary" onclick="bQuote()">💼 إنشاء عرض سعر</button><button class="btn" onclick="bCopy()">📋 نسخ النص</button><button class="btn danger" onclick="if(confirm('تفريغ العرض؟')){bSet([]);catBasketRender()}">🗑️ تفريغ</button></div></div>`}
 const HEAT_AR={'Electric':'⚡ كهربا','Gas':'🔥 غاز','Steam':'♨️ بخار','Hot water':'🚿 مياه ساخنة','Heat pump':'♻️ Heat pump','Cooling only':'❄️ بارد فقط'};
 const heatLbl=(c,h)=>cMeta(c).division==='hvac'&&h==='Heat pump'?'🔥❄️ بارد/ساخن':(HEAT_AR[h]||h);
-function itemRow(c,it){const m=cMeta(c),cur=m.currency||'EUR',g=calc(c.meta.id,cur,it.price),has2=CATS.has2;return`<tr><td><button class="btn sm primary" title="ضيف للعرض" onclick="bAdd('${it.id}')">➕</button></td><td><div class="cv" dir="ltr" style="text-align:left"><b>${esc(it.model||it.desc)}</b>${it.model&&it.desc?`<div class="small muted" dir="auto">${esc(it.desc)}</div>`:''}<div>${it.new?'<span class="badge b-green">New</span> ':''}${it.cap!=null?`<span class="badge">${it.cap} ${m.division==='hvac'?'k BTU':'kg'}</span> `:''}${it.heat?`<span class="badge b-amber">${esc(heatLbl(c,it.heat))}</span>`:''}</div></div></td>
+function itemRow(c,it){const m=cMeta(c),cur=m.currency||'EUR',g=calc(c.meta.id,cur,it.price,it.price2),has2=CATS.has2;return`<tr><td><button class="btn sm primary" title="ضيف للعرض" onclick="bAdd('${it.id}')">➕</button></td><td><div class="cv" dir="ltr" style="text-align:left"><b>${esc(it.model||it.desc)}</b>${it.model&&it.desc?`<div class="small muted" dir="auto">${esc(it.desc)}</div>`:''}<div>${it.new?'<span class="badge b-green">New</span> ':''}${it.cap!=null?`<span class="badge">${it.cap} ${m.division==='hvac'?'k BTU':'kg'}</span> `:''}${it.heat?`<span class="badge b-amber">${esc(heatLbl(c,it.heat))}</span>`:''}</div></div></td>
   ${CATS.hasCode?`<td class="nowrap small">${esc(it.code||'')}${it.codeOpt?`<div class="muted">${esc(it.codeOpt)}</div>`:''}</td>`:''}<td><div class="cv small" dir="ltr" style="text-align:left">${(it.specs||[]).map(([a,v])=>`<span style="white-space:nowrap"><span class="muted">${esc(a)}:</span> ${esc(v)}</span>`).join(' · ')}</div></td>
   <td class="nowrap"><b>${fCur(it.price,cur)}</b></td>${has2?`<td class="nowrap">${fCur(it.price2,cur)}</td>`:''}<td class="nowrap">${fEgp(g)}</td><td class="small muted nowrap">ص ${it.page}</td></tr>`}
-function ITH(c){const m=cMeta(c);return`<thead><tr><th></th><th>الموديل / الوصف</th>${CATS.hasCode?'<th>الكود</th>':''}<th>المواصفات</th><th>${esc(m.priceLabel||'سعر الكتالوج')} ${CUR[m.currency]||''}</th>${CATS.has2?`<th>${esc(m.price2Label||'سعر 2')}</th>`:''}<th>بعد التسعير</th><th>المصدر</th></tr></thead>`}
+const catTid=c=>'cat_'+String(c.meta.id).replace(/[^a-z0-9]/gi,'_');
+function rzTh(tid,i,label){const v=ui.colw[tid+':'+i],st=v?` style="width:${v}px;min-width:${v}px;max-width:${v}px"`:'';
+  return`<th${st}>${label}${i>0?`<span class="rz" title="اسحب لتغيير عرض العمود — دبل كليك للإرجاع" onpointerdown="startRz(event,'${tid}',${i})" ondblclick="resetRz(event,'${tid}',${i})" onclick="event.stopPropagation()"></span>`:''}</th>`}
+const rzTable=tid=>` data-tid="${tid}"${Object.keys(ui.colw).some(k=>k.startsWith(tid+':'))?' style="table-layout:fixed"':''}`;
+function ITH(c){const m=cMeta(c),tid=catTid(c);const H=['','الموديل / الوصف',...(CATS.hasCode?['الكود']:[]),'المواصفات',`${esc(m.priceLabel||'سعر الكتالوج')} ${CUR[m.currency]||''}`,...(CATS.has2?[esc(m.price2Label||'سعر 2')]:[]),'سعر البيع','المصدر'];
+  return`<thead><tr>${H.map((h,i)=>rzTh(tid,i,h)).join('')}</tr></thead>`}
 function famCard(c,f,onlyItems){const im=f.img&&c.imgs[f.img];return`<div class="card"><div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">${im?`<img src="data:image/jpeg;base64,${im}" alt="" style="width:120px;max-height:150px;object-fit:contain;background:#fff;border:1px solid #e5e8ef;border-radius:10px;padding:4px">`:''}
   <div style="flex:1;min-width:220px"><h2 style="margin:0 0 4px" dir="auto">${esc(f.name)}</h2>${f.sub?`<div class="small muted" dir="auto">${esc(f.sub)}</div>`:''}
   ${f.feats&&f.feats.length?`<details style="margin-top:6px"><summary class="small" style="cursor:pointer">📋 المواصفات والملاحظات العامة (${f.feats.length})</summary><ul class="small" dir="auto" style="margin:6px 0;padding-inline-start:18px">${f.feats.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></details>`:''}</div></div>
-  ${(onlyItems?[{name:'',items:onlyItems}]:f.tables).map(t=>`${t.name?`<h3 style="margin:14px 0 6px;font-size:14px" dir="auto">${esc(t.name==='Models'?'الموديلات':t.name)} <span class="muted small">(${t.items.length})</span></h3>`:''}<div class="table-wrap"><table>${ITH(c)}<tbody>${t.items.map(it=>itemRow(c,it)).join('')}</tbody></table></div>`).join('')}</div>`}
+  ${(onlyItems?[{name:'',items:onlyItems}]:f.tables).map(t=>`${t.name?`<h3 style="margin:14px 0 6px;font-size:14px" dir="auto">${esc(t.name==='Models'?'الموديلات':t.name)} <span class="muted small">(${t.items.length})</span></h3>`:''}<div class="table-wrap"><table${rzTable(catTid(c))}>${ITH(c)}<tbody>${t.items.map(it=>itemRow(c,it)).join('')}</tbody></table></div>`).join('')}</div>`}
 const CF=()=>ui.cf||(ui.cf={});
 function cfSet(k,v){const f=CF();if(v===''||v==null||v===false)delete f[k];else f[k]=v;if(k==='sec')delete f.fam;catFilterBar();catResults()}
 function cfClear(){ui.cf={};ui.catQ='';const q=$('#catQ');if(q)q.value='';catFilterBar();catResults()}
@@ -1242,8 +1247,16 @@ function catFilterBar(){const el=$('#catFilters'),c=curCat();if(!el||!c)return;c
    ${hasCap?`<span class="small muted">${m.division==='hvac'?'❄️ القدرة (ألف BTU)':'⚖️ السعة كجم'}</span>${num('cmin','من')}${num('cmax','لحد')}`:''}
    <span class="small muted">💰 السعر ${CUR[m.currency]||''}</span>${num('pmin','من')}${num('pmax','لحد')}
    ${hasNew?`<label class="small" style="display:flex;gap:4px;align-items:center"><input type="checkbox" ${f.isnew?'checked':''} onchange="cfSet('isnew',this.checked)"> 🆕 الجديد بس</label>`:''}
-   ${cfActive()||ui.catQ?`<button class="btn sm" onclick="cfClear()">✕ مسح الفلاتر</button>`:''}</div>`}
-function catResults(){const el=$('#catRes'),c=curCat();if(!el||!c)return;const q=(ui.catQ||'').trim().toLowerCase(),f=CF();
+   ${cfActive()||ui.catQ?`<button class="btn sm" onclick="cfClear()">✕ مسح الفلاتر</button>`:''}</div>
+   <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px" class="small"><span class="muted">↕️ حجم الصفوف:</span>${[['s','مضغوط'],['m','عادي'],['l','كبير']].map(([k,l])=>`<button class="btn sm ${catDens()===k?'navy':''}" onclick="catSetDens('${k}')">${l}</button>`).join('')}
+   <label style="display:flex;gap:4px;align-items:center;margin-inline-start:8px"><input type="checkbox" ${catSpec1()?'checked':''} onchange="catSetSpec1(this.checked)"> المواصفات في سطرين بس</label>
+   <span class="muted" style="margin-inline-start:8px">↔️ لتغيير عرض أي عمود اسحب حافة العنوان — دبل كليك يرجّعه</span></div>`}
+const catDens=()=>{try{return localStorage.getItem('delta_catdens')||'m'}catch(_){return'm'}};
+const catSpec1=()=>{try{return localStorage.getItem('delta_catspec1')==='1'}catch(_){return false}};
+function catSetDens(k){try{localStorage.setItem('delta_catdens',k)}catch(_){}const a=$('#catArea');if(a){a.classList.remove('dens-s','dens-m','dens-l');a.classList.add('dens-'+k)}catFilterBar()}
+function catSetSpec1(v){try{localStorage.setItem('delta_catspec1',v?'1':'0')}catch(_){}const a=$('#catArea');if(a)a.classList.toggle('spec1',v)}
+function catApplyW(c){const tid=catTid(c);Object.keys(ui.colw).filter(k=>k.startsWith(tid+':')).forEach(k=>applyColW(tid,+k.split(':')[1],ui.colw[k]))}
+function catResults(){const el=$('#catRes'),c=curCat();if(!el||!c)return;setTimeout(()=>catApplyW(c),0);const q=(ui.catQ||'').trim().toLowerCase(),f=CF();
   const all=Object.values(catIndex(c));CATS.has2=all.some(x=>x.it.price2!=null);CATS.hasCode=all.some(x=>x.it.code||x.it.codeOpt);
   if(!q&&f.sec!=null&&Object.keys(f).every(k=>k==='sec'||k==='fam')&&c.cat.sections[f.sec]){const sec=c.cat.sections[f.sec];
     el.innerHTML=(f.fam!=null?[sec.families[f.fam]]:sec.families).filter(Boolean).map(fm=>famCard(c,fm)).join('');return}
@@ -1264,6 +1277,7 @@ function viewCatalog(){if(!CATS.list){loadCats();return`<div class="card muted">
   const c=curCat();
   const up=`<input type="file" id="catFile" accept=".json,application/json" style="display:none" onchange="catUpload(this)"><button class="btn" onclick="$('#catFile').click()">📂 رفع / تحديث كتالوج</button>`;
   if(!c)return`<div class="card" style="border:2px dashed var(--green)"><h2>📚 الكتالوج والأسعار</h2><p>لسه مفيش كتالوج مرفوع. ارفع ملف الكتالوج (.json) اللي جهزه Claude من كتالوج المورد (PDF).</p>${up}</div>`;
+  CATS.has2Cat=Object.values(catIndex(c)).some(x=>x.it.price2!=null);
   const m=cMeta(c),cur=m.currency||'EUR',p=prS(c.meta.id,cur),egpCat=cur==='EGP',divI=d=>d==='hvac'?'❄️ ':d==='laundry'?'🧺 ':'';
   setTimeout(()=>{catFilterBar();catResults();catBasketRender()},0);
   return`${CATS.list.length>1?`<div class="btns" style="margin-bottom:10px">${CATS.list.map(x=>`<button class="btn ${x===c?'navy':''}" onclick="ui.catId='${esc(x.meta.id)}';ui.cf={};ui.catQ='';CATS.idx=null;render()">${divI(x.meta.division||x.cat.division)}${esc(x.meta.name)}</button>`).join('')}</div>`:''}
@@ -1271,13 +1285,17 @@ function viewCatalog(){if(!CATS.list){loadCats();return`<div class="card muted">
    <div><h2 style="margin:0">📚 ${divI(m.division)}${esc(m.name)}</h2><div class="small muted">${m.count||''} صنف · العملة ${esc(cur)} · ${esc(m.source||'')} · آخر تحديث ${fmt((m.updatedAt||'').slice(0,10))}</div></div>
    <div class="btns">${up}<button class="btn sm danger" onclick="catDelete('${esc(c.meta.id)}')">حذف</button></div></div>
    ${(m.notes||[]).length?`<details style="margin-top:8px"><summary class="small" style="cursor:pointer">ℹ️ ملاحظات قائمة الأسعار</summary><ul class="small" dir="auto">${m.notes.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></details>`:''}
-   <details style="margin-top:10px" ${(!egpCat&&!p.rate)?'open':''}><summary style="cursor:pointer"><b>💱 التسعير ${egpCat?'(خصم وهامش ربح)':'بالجنيه'}</b> <span class="small muted">${egpCat?`خصم ${p.disc}% · ربح ${p.margin}% — محسوب على ${esc(m.priceLabel||'سعر الكتالوج')}`:p.rate?`يورو = ${p.rate} ج.م · خصم ${p.disc}% · شحن وجمارك ${p.ship}% · ربح ${p.margin}%`:'حدد سعر العملة عشان يظهر السعر بالجنيه'}</span></summary>
-   <div class="fgrid" style="margin-top:8px">${egpCat?'':`<div class="f"><label>سعر ${esc(cur==='EUR'?'اليورو':cur)} (ج.م)</label><input id="pr_rate" type="number" step="0.01" value="${p.rate||''}"></div>`}<div class="f"><label>${egpCat?'خصم إضافي من المورد %':'خصم المورد %'}</label><input id="pr_disc" type="number" step="0.1" value="${p.disc}"></div>
+   <details style="margin-top:10px" ${(!egpCat&&!p.rate)?'open':''}><summary style="cursor:pointer"><b>💱 التسعير ${egpCat?'(خصم وهامش ربح)':'بالجنيه'}</b> <span class="small muted">${egpCat?(p.base==='price2'?`البيع بـ ${esc(m.price2Label||'سعر المستهلك')}${p.disc?' − خصم '+p.disc+'%':''}`:`${esc(m.priceLabel||'سعر الكتالوج')} + ربح ${p.margin}%${p.disc?' · خصم '+p.disc+'%':''}`):p.rate?`يورو = ${p.rate} ج.م · خصم ${p.disc}% · شحن وجمارك ${p.ship}% · ربح ${p.margin}%`:'حدد سعر العملة عشان يظهر السعر بالجنيه'}</span></summary>
+   <div class="fgrid" style="margin-top:8px">${CATS.has2Cat?`<div class="f full"><label>سعر البيع للعميل يتحسب على أساس</label><select id="pr_base"><option value="price" ${p.base!=='price2'?'selected':''}>${esc(m.priceLabel||'سعر الكتالوج')} + هامش الربح</option><option value="price2" ${p.base==='price2'?'selected':''}>${esc(m.price2Label||'سعر المستهلك')} (− الخصم لو فيه)</option></select></div>`:''}${egpCat?'':`<div class="f"><label>سعر ${esc(cur==='EUR'?'اليورو':cur)} (ج.م)</label><input id="pr_rate" type="number" step="0.01" value="${p.rate||''}"></div>`}<div class="f"><label>${egpCat?'خصم إضافي من المورد %':'خصم المورد %'}</label><input id="pr_disc" type="number" step="0.1" value="${p.disc}"></div>
    ${egpCat?'':`<div class="f"><label>شحن وجمارك ومصاريف %</label><input id="pr_ship" type="number" step="0.1" value="${p.ship}"></div>`}<div class="f"><label>هامش الربح %</label><input id="pr_margin" type="number" step="0.1" value="${p.margin}"></div></div>
-   <div class="small muted">${egpCat?`السعر بعد التسعير = ${esc(m.priceLabel||'سعر الكتالوج')} × (1 − الخصم) × (1 + الربح)`:'السعر بعد التسعير = سعر الكتالوج × (1 − الخصم) × (1 + الشحن) × (1 + الربح) × سعر العملة'}</div><button class="btn primary sm" style="margin-top:8px" onclick="savePr()">حفظ</button></details></div>
+   <div class="small muted">${egpCat?`سعر البيع = ${esc(m.priceLabel||'سعر الكتالوج')} × (1 − الخصم) × (1 + الربح) — أو ${esc(m.price2Label||'سعر المستهلك')} × (1 − الخصم) لو اخترته`:'السعر بعد التسعير = سعر الكتالوج × (1 − الخصم) × (1 + الشحن) × (1 + الربح) × سعر العملة'}</div><button class="btn primary sm" style="margin-top:8px" onclick="savePr()">حفظ</button></details></div>
+   <style>#catArea.dens-s td,#catArea.dens-s th{padding:3px 6px!important;font-size:12px}#catArea.dens-s .badge{font-size:10px;padding:1px 6px}
+   #catArea.dens-l td,#catArea.dens-l th{padding:14px 12px!important;font-size:15px}#catArea.spec1 td .cv.small{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+   #catArea.dens-s img{width:70px!important;max-height:90px!important}</style>
+   <div id="catArea" class="dens-${catDens()} ${catSpec1()?'spec1':''}">
    <div id="catBasket"></div>
    <div class="card" style="position:sticky;top:0;z-index:5"><input id="catQ" type="search" placeholder="🔍 دوّر بالموديل أو الكود أو الوصف أو المواصفات…" value="${esc(ui.catQ||'')}" style="width:100%;padding:10px;border:1px solid #d5dae4;border-radius:9px;font-family:inherit" oninput="clearTimeout(window._cq);window._cq=setTimeout(()=>{ui.catQ=this.value;catResults();catFilterBar()},250)"><div id="catFilters"></div></div>
-   <div id="catRes"></div>
+   <div id="catRes"></div></div>
    <div class="small muted" style="margin-top:8px">⚠️ الأسعار والمواصفات مستخرجة آلياً من قائمة المورد — راجع رقم الصفحة (ص) قبل إرسال عرض نهائي.</div>`}
 
 function pullNextLeads(){const s=sset(),t=today();const due=(db.leads||[]).filter(leadDue).length;const n=Math.max(0,s.callTarget-due);if(!n){toast('عندك '+due+' متابعة النهارده — خلّصهم الأول');return}
